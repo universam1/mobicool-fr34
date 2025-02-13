@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "cppdbg",
+      "request": "launch",
+      "name": "Launch Program",
+      "program": "${workspaceFolder}/${input:executableName}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build Project",
+      "stopAtEntry": true
+    }
+  ],
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "executableName",
+      "description": "Enter the name of the executable to debug"
+    }
+  ]
+}
