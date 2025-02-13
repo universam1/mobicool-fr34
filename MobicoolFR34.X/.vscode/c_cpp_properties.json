@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "XC8",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/mcc_generated_files"
+            ],
+            "defines": [],
+            "cStandard": "c99",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
