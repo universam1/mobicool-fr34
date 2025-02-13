@@ -6,7 +6,7 @@
             "type": "shell",
             "command": "xc8-cc",
             "args": [
-                "-mcpu=16F1783",
+                "-mcpu=16F1829",
                 "-o",
                 "dist/default/production/MobicoolFR34.X.production.hex",
                 "main.c",
@@ -19,7 +19,8 @@
                 "mcc_generated_files/mcc.c",
                 "mcc_generated_files/memory.c",
                 "mcc_generated_files/pin_manager.c",
-                "mcc_generated_files/tmr1.c"
+                "mcc_generated_files/tmr1.c",
+                "modbus.c"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
