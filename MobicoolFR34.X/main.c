@@ -17,31 +17,12 @@
  */
 
 #include "mcc_generated_files/mcc.h"
-#include "tm1620b.h"
 #include "analog.h"
 #include "irmcf183.h"
 #include "modbus.h"
 #include "settings.h"
-
-#define DEFAULT_BRIGHT (4)
-#define DIM_BRIGHT (0)
-
-typedef enum {
-    IDLE = 0,
-    SET_BEGIN,
-    SET_TEMP,
-    SET_UNIT,
-    SET_BATTMON,
-    SET_END,
-    DISP_BEGIN,
-    DISP_VOLT,
-    DISP_COMPPOWER,
-    DISP_COMPTIMER,
-    DISP_COMPSPEED,
-    DISP_FANCURRENT,
-    DISP_TEMPRATE,
-    DISP_END,
-} displaystate_t;
+#include "display.h"
+#include "tm1620b.h"
 
 typedef enum {
     COMP_LOCKOUT = 0,
@@ -81,63 +62,72 @@ void main(void) {
 
     IO_LightEna_SetHigh();
     TM1620B_Init();
-    TM1620B_Update( (uint8_t[]){0, c_U, c_E, c_o, c_S} );
+    TM1620B_Update((uint8_t[]){0, c_U, c_E, c_o, c_S});
 
     __delay_ms(200);
+    Display_Initialize();
     Compressor_Init();
     Modbus_Initialize();
     __delay_ms(1800);
 
-    displaystate_t cur_state = IDLE;
+    // Initialize settings
+    settings_t settings;
+    Settings_Initialize(&settings);
+
+    // Initialize display context
+    display_context_t display = {
+        .state = DISP_IDLE,
+        .on = settings.on,
+        .temp_setpoint = settings.temp_setpoint,
+        .fahrenheit = settings.fahrenheit,
+        .battmon = settings.battmon,
+        .temp_setpoint10 = settings.temp_setpoint * 10
+    };
+    
+    // Initialize control variables
     uint8_t lastkeys = 0;
-    uint8_t flashtimer = 0;
     uint16_t seconds = 0;
     uint8_t comp_timer = 20;
     uint8_t comp_speed = 0;
     comp_state_t compstate = COMP_LOCKOUT;
-    settings_t settings;
-    Settings_Initialize(&settings);
-    bool on = settings.on;
-    int8_t temp_setpoint = settings.temp_setpoint;
-    bool fahrenheit = settings.fahrenheit;
-    bmon_t battmon = settings.battmon;
-    
-    AnalogUpdate();
     uint8_t longpress = 0;
-    bool newon = on;
-    int8_t newtemp = temp_setpoint;
-    bool newfahrenheit = fahrenheit;
-    bmon_t newbattmon = battmon;
-    int16_t temp_setpoint10 = temp_setpoint * 10;
+
+    // Temperature management
+    int16_t temperature10 = display.temperature10;
+    int16_t temp_setpoint10 = display.temp_setpoint10;
+    int16_t last_temp = display.last_temp;
+    int16_t temp_rate = 0;
+
+    // Initialize setting change variables
+    display.newon = display.on;
+    display.newtemp = display.temp_setpoint;
+    display.newfahrenheit = display.fahrenheit;
+    display.newbattmon = display.battmon;
+
+    // Average temperature variables
     int16_t tempacc = 0;
     uint8_t numtemps = 0;
-    int16_t temperature10 = AnalogGetTemperature10();
-    int16_t temp_rate = 0;
-    int16_t last_temp = 0;
-    uint8_t temp_rate_tick = 0;
-    uint8_t idletimer = 0;
-    uint8_t dimtimer = 0;
+    int16_t temp_rate_tick = 0;
+
+    // Average voltage variables
     uint32_t voltacc = 0;
     uint8_t numvolts = 0;
-    bool battlow = false;
+    
+    // Initial readings
+    AnalogUpdate();
+    display.temperature10 = AnalogGetTemperature10();
+    display.last_temp = display.temperature10;
+    display.battlow = false;
     
     while (1) {
         bool compressor_check = false;
+
         if (TMR1_HasOverflowOccured()) {
             TMR1_Reload();
             PIR1bits.TMR1IF = 0;
             seconds++;
             compressor_check = true;
-            if (idletimer < 10) {
-                idletimer++;
-            } else if (idletimer == 10) {
-                cur_state = IDLE;
-            }
-            if (dimtimer < 20) {
-                dimtimer++;
-            } else if (dimtimer == 20) {
-                TM1620B_SetBrightness(true, DIM_BRIGHT);
-            }
+            Display_TimerTick(&display);
         }
 
         // Process Modbus communications
@@ -161,15 +151,15 @@ void main(void) {
             volt = (volt + 50) / 100; // Scale to tenths of Volts
             bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
             for (uint8_t i = 0; i < NUM_BMON_LEVELS; i++) {
-                if (levels[i].level == battmon &&
+                if (levels[i].level == display.battmon &&
                     (levels[i].supply == BMON_WILDCARD || levels[i].supply == supply)) {
-                    if (volt < levels[i].cutout && !battlow) {
-                        battlow = true;
+                    if (volt < levels[i].cutout && !display.battlow) {
+                        display.battlow = true;
                         Compressor_OnOff(false, false, 0);
                         comp_timer = 20;
                         compstate = COMP_LOCKOUT;
-                    } else if (volt > levels[i].restart && battlow) {
-                        battlow = false;
+                    } else if (volt > levels[i].restart && display.battlow) {
+                        display.battlow = false;
                     }
                     break;
                 }
@@ -177,16 +167,15 @@ void main(void) {
             voltacc = numvolts = 0;
         }
 
-        if (battlow) compressor_check = false;
+        if (display.battlow) compressor_check = false;
 
+        // Update measurements
         uint16_t fancurrent = AnalogGetFanCurrent();
-        uint8_t comppower = AnalogGetCompPower();
 
         uint8_t keys = TM1620B_GetKeys();
         uint8_t pressed_keys = keys & ~lastkeys;
 
         bool comp_on = Compressor_IsOn();
-        uint8_t leds = /*orange*/!comp_on << 7 | /*err*/battlow << 6 | /*green*/comp_on << 4;
         
         if (compressor_check) {
             uint8_t min = Compressor_GetMinSpeedIdx();
@@ -280,231 +269,76 @@ void main(void) {
             comp_speed = speedidx;
         }
         
+        // Update display context with latest measurements and state
+        display.voltage = voltage;
+        display.fancurrent = fancurrent;
+        display.comppower = AnalogGetCompPower();
+        display.comp_timer = comp_timer;
+        display.comp_speed = comp_speed;
+        display.comp_on = comp_on;
+        display.temperature10 = temperature10;
+        display.last_temp = last_temp;
+        display.temp_rate = temp_rate;
+
+        // Handle key presses and update display
+        Display_HandleKeyPress(&display, pressed_keys);
+        Display_Update(&display, pressed_keys);
+
+        // Update on/off control
+        if (display.on) {
+            IO_LightEna_SetHigh();
+        } else {
+            IO_LightEna_SetLow();
+            pressed_keys = 0;
+            compressor_check = false;
+        }
+
+        // Update long press detection for on/off
         if (keys & KEY_ONOFF) {
             if (longpress <= 20) longpress++;
             if (longpress == 20) {
-                newon = !newon;
-                cur_state = IDLE;
-                if (newon) {
-                    idletimer = 0;
-                    dimtimer = 0;
-                    TM1620B_SetBrightness(true, DEFAULT_BRIGHT);
+                display.newon = !display.on;
+                display.state = DISP_IDLE;
+                if (display.newon) {
+                    display.idletimer = 0;
+                    display.dimtimer = 0;
                 } else {
                     Compressor_OnOff(false, false, 0);
                     comp_timer = 20;
                     compstate = COMP_LOCKOUT;
-                    TM1620B_SetBrightness(true, DIM_BRIGHT);
                 }
             }
         } else {
             longpress = 0;
         }
 
-        if (on) {
-            IO_LightEna_SetHigh();
-        } else {
-            IO_LightEna_SetLow();
-            leds = 0;
-            pressed_keys = 0;
-            compressor_check = false;
-        }
-
-        if (pressed_keys) {            
-            flashtimer = 0; // restart flash timer on every keypress
-            idletimer = 0;
-            dimtimer = 0;
-            TM1620B_SetBrightness(true, DEFAULT_BRIGHT);
-        }
-
-        if (pressed_keys & KEY_ONOFF) {
-            // Short presses toggles between different status displays
-            if (cur_state < DISP_BEGIN || cur_state > DISP_END) cur_state = DISP_BEGIN;
-            cur_state++;
-            if (cur_state == DISP_END) cur_state = IDLE;
-        }
-        
-        if (pressed_keys & KEY_SET) {
-            if (cur_state < SET_BEGIN || cur_state > SET_END) {
-                cur_state = SET_BEGIN;
-                newtemp = temp_setpoint;
-            }
-            cur_state++;
-            if (cur_state == SET_END) cur_state = IDLE;
-        }
-        
-        if (cur_state == IDLE) { // Perform housekeeping if we need to update settings
-            if (newon != on) {
-                on = newon;
-                Settings_SaveOnOff(on);
+        if (display.state == DISP_IDLE) { // Perform housekeeping if we need to update settings
+            if (display.newon != display.on) {
+                display.on = display.newon;
+                Settings_SaveOnOff(display.on);
             }
             // Update temperature setpoint from Modbus if changed
             int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
             if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
-                newtemp = modbus_temp;
+                display.newtemp = modbus_temp;
             }
-            if (newtemp != temp_setpoint) {
-                temp_setpoint = newtemp;
-                temp_setpoint10 = newtemp * 10;
-                Settings_SaveTemp(temp_setpoint);
-                Modbus_SetTargetTemperature(temp_setpoint10);
+            if (display.newtemp != display.temp_setpoint) {
+                display.temp_setpoint = display.newtemp;
+                display.temp_setpoint10 = display.newtemp * 10;
+                temp_setpoint10 = display.temp_setpoint10; // Update local copy
+                Settings_SaveTemp(display.temp_setpoint);
+                Modbus_SetTargetTemperature(display.temp_setpoint10);
             }
-            if (newfahrenheit != fahrenheit) {
-                fahrenheit = newfahrenheit;
-                Settings_SaveUnit(fahrenheit);
+            if (display.newfahrenheit != display.fahrenheit) {
+                display.fahrenheit = display.newfahrenheit;
+                Settings_SaveUnit(display.fahrenheit);
             }
-            if (newbattmon != battmon) {
-                battmon = newbattmon;
-                Settings_SaveBattMon(battmon);
+            if (display.newbattmon != display.battmon) {
+                display.battmon = display.newbattmon;
+                Settings_SaveBattMon(display.battmon);
             }
         }
 
-        // Display state machine
-        switch (cur_state) {
-            case DISP_VOLT: {
-                uint8_t buf[5];
-                uint16_t dispvolt = (voltage + 50) / 100; // decivolt
-                uint8_t num = FormatDigits(NULL, dispvolt, 2);
-                buf[0] = leds;
-                buf[1] = 0;
-                FormatDigits(&buf[4 - num], dispvolt, 2);
-                buf[3] |= ADD_DOT;
-                buf[4] = c_V;
-                TM1620B_Update(buf);
-                break;
-            }
-            case DISP_COMPPOWER: {
-                uint8_t buf[3];
-                buf[1] = 0;
-                FormatDigits(buf, AnalogGetCompPower(), 0);
-                TM1620B_Update((uint8_t[]){leds, c_C, 0, buf[0], buf[1]});
-                break;
-            }
-            case DISP_COMPTIMER: {
-                uint8_t buf[3];
-                buf[1] = 0;
-                FormatDigits(buf, comp_timer, 0);
-                TM1620B_Update((uint8_t[]){leds, c_t, 0, buf[0], buf[1]});
-                break;
-            }
-            case DISP_COMPSPEED: {
-                uint8_t buf[3];
-                FormatDigits(buf, comp_speed * 5, 3); // In percent
-                TM1620B_Update((uint8_t[]){leds, c_r, buf[0], buf[1], buf[2]});
-                break;
-            }
-            case DISP_FANCURRENT: {
-                uint8_t buf[5];
-                uint16_t dispamp = (fancurrent + 50) / 100; // deciamp
-                uint8_t num = FormatDigits(NULL, dispamp, 2);
-                buf[0] = leds;
-                buf[1] = c_F;
-                FormatDigits(&buf[4 - num], dispamp, 2);
-                buf[3] |= ADD_DOT;
-                buf[4] = c_A;
-                TM1620B_Update(buf);
-                break;
-            }
-            case DISP_TEMPRATE: {
-                uint8_t buf[5];
-                uint8_t num = FormatDigits(NULL, temp_rate, 2);
-                buf[0] = leds;
-                buf[1] = c_d;
-                buf[2] = 0;
-                FormatDigits(&buf[5 - num], temp_rate, 2);
-                buf[4] |= ADD_DOT;
-                TM1620B_Update(buf);
-                break;
-            }
-            case SET_TEMP: {
-                uint8_t buf[5] = {leds, 0, 0, 0, fahrenheit ? c_F : c_C | ADD_DOT};
-                if (pressed_keys & KEY_MINUS && newtemp > MIN_TEMP) newtemp--;
-                if (pressed_keys & KEY_PLUS && newtemp < MAX_TEMP) newtemp++;
-                if (!(flashtimer & 0x08)) {
-                    int8_t disptemp = fahrenheit ? ((((newtemp * 9) + 2) / 5) + 32) : newtemp;
-                    uint8_t num = FormatDigits(NULL, disptemp, 0);
-                    FormatDigits(&buf[4 - num], disptemp, 0); // Right justified
-                }
-                TM1620B_Update(buf);
-                break;
-            }
-            case SET_UNIT:
-                if (pressed_keys & (KEY_PLUS | KEY_MINUS)) {
-                    newfahrenheit = !fahrenheit;
-                }
-                TM1620B_Update((uint8_t[]){leds, 0, 0, 0, (flashtimer & 0x08 ? 0 : (newfahrenheit ? c_F : c_C)) | ADD_DOT});
-                break;
-            case SET_BATTMON: {
-                bool show = !(flashtimer & 0x8);
-                if (pressed_keys & KEY_MINUS && newbattmon > BMON_DIS) newbattmon--;
-                if (pressed_keys & KEY_PLUS && newbattmon < BMON_HIGH) newbattmon++;
-                uint8_t buf[] = {leds, 0, 0, 0, 0};
-                if (show) {
-                    switch (newbattmon) {
-                        case BMON_DIS:
-                            buf[2] = c_d;
-                            buf[3] = c_i;
-                            buf[4] = c_S;
-                            break;
-                        case BMON_LOW:
-                            buf[2] = c_L;
-                            buf[3] = c_o;
-                            break;
-                        case BMON_MED:
-                            buf[2] = c_M;
-                            buf[3] = c_E;
-                            buf[4] = c_d;
-                            break;
-                        case BMON_HIGH:
-                            buf[2] = c_H;
-                            buf[3] = c_i;
-                            break;
-                    }
-                }
-                TM1620B_Update(buf);
-                break;
-            }
-            case IDLE: {
-                uint8_t buf[5] = {leds, 0, 0, 0, fahrenheit ? c_F : c_C | ADD_DOT};
-                bool tenths = true; // Maybe customizable in the future?
-                if (fahrenheit && temperature10 > 377) tenths = false; // Force tenths off when above 99.9F
-                int16_t disptemp;
-                if (tenths) {
-                    disptemp = fahrenheit ? ((((temperature10 * 9) + 2) / 5) + 320) : temperature10;
-                } else {
-                    int16_t temperature = (temperature10 + 5) / 10;
-                    disptemp = fahrenheit ? ((((temperature * 9) + 2) / 5) + 32) : temperature;
-                }
-                uint8_t num = FormatDigits(NULL, disptemp, tenths ? 2 : 0);
-                FormatDigits(&buf[4 - num], disptemp, tenths ? 2 : 0); // Right justified
-                if (tenths) buf[3] |= ADD_DOT;
-                if (!on) {
-                    if ((flashtimer & 0x0f) < 0xa) {
-                        buf[1] = buf[2] = buf[3] = buf[4] = 0;
-                    } else if (flashtimer & 0x10) {
-                        buf[1] = c_o;
-                        buf[2] = c_F;
-                        buf[3] = c_F;
-                        buf[4] = 0;
-                    }
-                } else if (battlow) {
-                    if ((flashtimer & 0x0f) < 0xa) {
-                        buf[1] = buf[2] = buf[3] = buf[4] = 0;
-                    } else if (flashtimer & 0x10) {
-                        buf[1] = c_b;
-                        buf[2] = c_A;
-                        buf[3] = buf[4] = c_t;
-                    }
-                }
-                TM1620B_Update(buf);
-                break;
-            }
-            case SET_BEGIN:
-            case SET_END:
-            case DISP_BEGIN:
-            case DISP_END:
-                break;
-        }
         lastkeys = keys;
-        flashtimer++;
     }
 }

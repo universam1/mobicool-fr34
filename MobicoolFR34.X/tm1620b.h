@@ -1,5 +1,8 @@
 #ifndef TM1620B_H
-#define	TM1620B_H
+#define TM1620B_H
+
+#include <stdbool.h>
+#include <stdint.h>
 
 // Segment definitions for digits and most letters
 extern const uint8_t hexdigits[];
