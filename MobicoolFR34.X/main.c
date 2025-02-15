@@ -24,6 +24,10 @@
 #include "display.h"
 #include "tm1620b.h"
 
+// Temperature averaging buffer size
+#define AVERAGING_SAMPLES 64
+#define TEMPERATURE_OFFSET 32
+
 typedef enum {
     COMP_LOCKOUT = 0,
     COMP_OFF,
@@ -44,10 +48,34 @@ typedef struct {
     int16_t restart;
 } battlevel_t;
 
+typedef struct {
+    comp_state_t state;
+    uint8_t timer;
+    uint8_t speed;
+    uint8_t fanspin;
+    bool running;
+} compressor_context_t;
+
+typedef struct {
+    int16_t temperature10;
+    int16_t temp_setpoint10;
+    int16_t last_temp;
+    int16_t temp_rate;
+    int16_t tempacc;
+    uint8_t numtemps;
+    int16_t temp_rate_tick;
+} temp_context_t;
+
+typedef struct {
+    uint32_t voltacc;
+    uint8_t numvolts;
+    bool battlow;
+} battery_context_t;
+
 #define THRESH_12V_24V (170) // Over 17.0V == 24V system, below == 12V system
 
 static const battlevel_t levels[] = {
-    { BMON_DIS, BMON_WILDCARD, 96, 109 }, // Not quite disabled, but the system won't work at lower levels anyway
+    { BMON_DIS, BMON_WILDCARD, 96, 109 }, // Not quite disabled, but system won't work at lower levels
     { BMON_LOW, BMON_12V, 101, 111 },
     { BMON_MED, BMON_12V, 114, 122 },
     { BMON_HIGH, BMON_12V, 118, 126 },
@@ -57,7 +85,16 @@ static const battlevel_t levels[] = {
 };
 #define NUM_BMON_LEVELS (sizeof(levels) / sizeof(levels[0]))
 
-void main(void) {
+// Function declarations
+static void system_init(display_context_t* display);
+static void update_temperature(temp_context_t* temp);
+static bool update_battery(battery_context_t* battery, display_context_t* display, compressor_context_t* comp);
+static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_context_t* temp);
+static void update_compressor_state(compressor_context_t* comp, temp_context_t* temp, bool check_enabled);
+static void handle_key_press(uint8_t keys, uint8_t* lastkeys, uint8_t* longpress, display_context_t* display, compressor_context_t* comp);
+static void update_settings(display_context_t* display, int16_t* temp_setpoint10);
+
+static void system_init(display_context_t* display) {
     SYSTEM_Initialize();
 
     IO_LightEna_SetHigh();
@@ -75,49 +112,237 @@ void main(void) {
     Settings_Initialize(&settings);
 
     // Initialize display context
-    display_context_t display = {
-        .state = DISP_IDLE,
-        .on = settings.on,
-        .temp_setpoint = settings.temp_setpoint,
-        .fahrenheit = settings.fahrenheit,
-        .battmon = settings.battmon,
-        .temp_setpoint10 = settings.temp_setpoint * 10
-    };
-    
-    // Initialize control variables
-    uint8_t lastkeys = 0;
-    uint16_t seconds = 0;
-    uint8_t comp_timer = 20;
-    uint8_t comp_speed = 0;
-    comp_state_t compstate = COMP_LOCKOUT;
-    uint8_t longpress = 0;
-
-    // Temperature management
-    int16_t temperature10 = display.temperature10;
-    int16_t temp_setpoint10 = display.temp_setpoint10;
-    int16_t last_temp = display.last_temp;
-    int16_t temp_rate = 0;
-
-    // Initialize setting change variables
-    display.newon = display.on;
-    display.newtemp = display.temp_setpoint;
-    display.newfahrenheit = display.fahrenheit;
-    display.newbattmon = display.battmon;
-
-    // Average temperature variables
-    int16_t tempacc = 0;
-    uint8_t numtemps = 0;
-    int16_t temp_rate_tick = 0;
-
-    // Average voltage variables
-    uint32_t voltacc = 0;
-    uint8_t numvolts = 0;
+    display->state = DISP_IDLE;
+    display->on = settings.on;
+    display->temp_setpoint = settings.temp_setpoint;
+    display->fahrenheit = settings.fahrenheit;
+    display->battmon = settings.battmon;
+    display->temp_setpoint10 = settings.temp_setpoint * 10;
+    display->newon = display->on;
+    display->newtemp = display->temp_setpoint;
+    display->newfahrenheit = display->fahrenheit;
+    display->newbattmon = display->battmon;
     
     // Initial readings
     AnalogUpdate();
-    display.temperature10 = AnalogGetTemperature10();
-    display.last_temp = display.temperature10;
-    display.battlow = false;
+    display->temperature10 = AnalogGetTemperature10();
+    display->last_temp = display->temperature10;
+    display->battlow = false;
+}
+
+static void update_temperature(temp_context_t* temp) {
+    temp->tempacc += AnalogGetTemperature10();
+    temp->numtemps++;
+    if (temp->numtemps == AVERAGING_SAMPLES) {
+        temp->temperature10 = (temp->tempacc + TEMPERATURE_OFFSET) >> 6;
+        temp->tempacc = temp->numtemps = 0;
+    }
+}
+
+static bool update_battery(battery_context_t* battery, display_context_t* display, compressor_context_t* comp) {
+    uint16_t voltage = AnalogGetVoltage();
+    battery->voltacc += voltage;
+    battery->numvolts++;
+    
+    if (battery->numvolts == AVERAGING_SAMPLES) {
+        uint16_t volt = (battery->voltacc + TEMPERATURE_OFFSET) >> 6;
+        volt = (volt + 50) / 100; // Scale to tenths of Volts
+        bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
+        
+        for (uint8_t i = 0; i < NUM_BMON_LEVELS; i++) {
+            if (levels[i].level == display->battmon &&
+                (levels[i].supply == BMON_WILDCARD || levels[i].supply == supply)) {
+                if (volt < levels[i].cutout && !display->battlow) {
+                    display->battlow = true;
+                    Compressor_OnOff(false, false, 0);
+                    comp->timer = 20;
+                    comp->state = COMP_LOCKOUT;
+                } else if (volt > levels[i].restart && display->battlow) {
+                    display->battlow = false;
+                }
+                break;
+            }
+        }
+        battery->voltacc = battery->numvolts = 0;
+        return true;
+    }
+    return false;
+}
+
+static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_context_t* temp) {
+    uint8_t min = Compressor_GetMinSpeedIdx();
+    uint8_t max = Compressor_GetMaxSpeedIdx();
+    uint8_t speedidx = comp->speed;
+    
+    uint8_t modbus_power = Modbus_GetCompressorPower();
+    uint8_t max_power = Modbus_GetMaxPowerLimit();
+    
+    if (modbus_power > 0 && max_power > 0) {
+        // Scale speed based on max power limit
+        uint32_t maxSpeed = (20UL * max_power) / 100;
+        speedidx = (uint8_t)((modbus_power * maxSpeed) / 100);
+    } else {
+        int16_t tempdiff = (temp->temperature10 - temp->temp_setpoint10);
+        
+        if (comp->state == COMP_STARTING) {
+            speedidx = (temp->temp_setpoint10 > 0) ? min : Compressor_GetDefaultSpeedIdx();
+        } else if (comp->state == COMP_RUN) {
+            temp->temp_rate_tick++;
+            if (temp->temp_rate_tick == 60) {
+                temp->temp_rate = temp->temperature10 - temp->last_temp;
+                
+                if (tempdiff > 100 && AnalogGetCompPower() < 45) {
+                    speedidx = max;
+                } else if (tempdiff > 40) {
+                    if (temp->temp_rate > -5 && speedidx < max) speedidx++;
+                    else if (temp->temp_rate < -5 && speedidx > min) speedidx--;
+                } else {
+                    if (temp->temp_rate > -1 && speedidx < max) speedidx++;
+                    else if (temp->temp_rate < -1 && speedidx > min) speedidx--;
+                }
+                
+                temp->temp_rate_tick = 0;
+                temp->last_temp = temp->temperature10;
+            }
+            
+            if (AnalogGetCompPower() > 45 && speedidx > min) {
+                speedidx--;
+            }
+        }
+    }
+    
+    return speedidx;
+}
+
+static void update_compressor_state(compressor_context_t* comp, temp_context_t* temp, bool check_enabled) {
+    if (!check_enabled) return;
+
+    int16_t tempdiff = (temp->temperature10 - temp->temp_setpoint10);
+    
+    if (comp->timer > 0) {
+        comp->timer--;
+        if (comp->timer == 0) comp->state++;
+    }
+    
+    if (comp->fanspin > 0) comp->fanspin--;
+    
+    switch (comp->state) {
+        case COMP_LOCKOUT:
+            Compressor_OnOff(false, comp->fanspin > 0, 0);
+            break;
+            
+        case COMP_OFF:
+            if (tempdiff >= 1 && comp->timer == 0) {
+                comp->timer = 2;
+                comp->fanspin = 2;
+            }
+            Compressor_OnOff(false, comp->fanspin > 0, 0);
+            break;
+            
+        case COMP_STARTING:
+            comp->speed = calculate_compressor_speed(comp, temp);
+            Compressor_OnOff(true, true, comp->speed);
+            if (comp->timer == 0) {
+                temp->temp_rate_tick = 0;
+                temp->temp_rate = 0;
+                temp->last_temp = temp->temperature10;
+                comp->timer = 30;
+            }
+            break;
+            
+        case COMP_RUN:
+            comp->speed = calculate_compressor_speed(comp, temp);
+            if (tempdiff <= 0) {
+                comp->state = COMP_LOCKOUT;
+                comp->timer = 99;
+                comp->fanspin = 120;
+                temp->temp_rate = 0;
+            } else {
+                Compressor_OnOff(true, true, comp->speed);
+            }
+            break;
+    }
+}
+
+static void handle_key_press(uint8_t keys, uint8_t* lastkeys, uint8_t* longpress, display_context_t* display, compressor_context_t* comp) {
+    uint8_t pressed_keys = keys & ~(*lastkeys);
+    
+    if (keys & KEY_ONOFF) {
+        if (*longpress <= 20) (*longpress)++;
+        if (*longpress == 20) {
+            display->newon = !display->on;
+            display->state = DISP_IDLE;
+            if (display->newon) {
+                display->idletimer = 0;
+                display->dimtimer = 0;
+            } else {
+                Compressor_OnOff(false, false, 0);
+                comp->timer = 20;
+                comp->state = COMP_LOCKOUT;
+            }
+        }
+    } else {
+        *longpress = 0;
+    }
+    
+    Display_HandleKeyPress(display, pressed_keys);
+    Display_Update(display, pressed_keys);
+    *lastkeys = keys;
+}
+
+static void update_settings(display_context_t* display, int16_t* temp_setpoint10) {
+    if (display->state != DISP_IDLE) return;
+    
+    if (display->newon != display->on) {
+        display->on = display->newon;
+        Settings_SaveOnOff(display->on);
+    }
+    
+    int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
+    if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
+        display->newtemp = modbus_temp;
+    }
+    
+    if (display->newtemp != display->temp_setpoint) {
+        display->temp_setpoint = display->newtemp;
+        display->temp_setpoint10 = display->newtemp * 10;
+        *temp_setpoint10 = display->temp_setpoint10;
+        Settings_SaveTemp(display->temp_setpoint);
+        Modbus_SetTargetTemperature(display->temp_setpoint10);
+    }
+    
+    if (display->newfahrenheit != display->fahrenheit) {
+        display->fahrenheit = display->newfahrenheit;
+        Settings_SaveUnit(display->fahrenheit);
+    }
+    
+    if (display->newbattmon != display->battmon) {
+        display->battmon = display->newbattmon;
+        Settings_SaveBattMon(display->battmon);
+    }
+}
+
+void main(void) {
+    display_context_t display = {0};
+    temp_context_t temp = {0};
+    battery_context_t battery = {0};
+    compressor_context_t comp = {
+        .state = COMP_LOCKOUT,
+        .timer = 20,
+        .speed = 0,
+        .fanspin = 0,
+        .running = false
+    };
+    
+    uint8_t lastkeys = 0;
+    uint8_t longpress = 0;
+    uint16_t seconds = 0;
+    
+    system_init(&display);
+    
+    temp.temperature10 = display.temperature10;
+    temp.temp_setpoint10 = display.temp_setpoint10;
+    temp.last_temp = display.last_temp;
     
     while (1) {
         bool compressor_check = false;
@@ -130,215 +355,39 @@ void main(void) {
             Display_TimerTick(&display);
         }
 
-        // Process Modbus communications
         Modbus_Process();
-        
         AnalogUpdate();
-        // Average temperature a bit more
-        tempacc += AnalogGetTemperature10();
-        numtemps++;
-        if (numtemps == 64) {
-            temperature10 = (tempacc + 32) >> 6;
-            tempacc = numtemps = 0;
+        
+        update_temperature(&temp);
+        if (update_battery(&battery, &display, &comp)) {
+            compressor_check &= !display.battlow;
         }
-        uint16_t voltage = AnalogGetVoltage();
-
-        // Average voltage some more for battery monitor
-        voltacc += voltage;
-        numvolts++;
-        if (numvolts == 64) {
-            uint16_t volt = (voltacc + 32) >> 6;
-            volt = (volt + 50) / 100; // Scale to tenths of Volts
-            bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
-            for (uint8_t i = 0; i < NUM_BMON_LEVELS; i++) {
-                if (levels[i].level == display.battmon &&
-                    (levels[i].supply == BMON_WILDCARD || levels[i].supply == supply)) {
-                    if (volt < levels[i].cutout && !display.battlow) {
-                        display.battlow = true;
-                        Compressor_OnOff(false, false, 0);
-                        comp_timer = 20;
-                        compstate = COMP_LOCKOUT;
-                    } else if (volt > levels[i].restart && display.battlow) {
-                        display.battlow = false;
-                    }
-                    break;
-                }
-            }
-            voltacc = numvolts = 0;
-        }
-
-        if (display.battlow) compressor_check = false;
-
-        // Update measurements
-        uint16_t fancurrent = AnalogGetFanCurrent();
 
         uint8_t keys = TM1620B_GetKeys();
-        uint8_t pressed_keys = keys & ~lastkeys;
-
-        bool comp_on = Compressor_IsOn();
+        handle_key_press(keys, &lastkeys, &longpress, &display, &comp);
         
-        if (compressor_check) {
-            uint8_t min = Compressor_GetMinSpeedIdx();
-            uint8_t max = Compressor_GetMaxSpeedIdx();
-            uint8_t speedidx = 0;
-            static uint8_t fanspin = 0;
-            int16_t tempdiff = (temperature10 - temp_setpoint10);
-            if (comp_timer > 0) {
-                comp_timer--;
-                if (comp_timer == 0) compstate++;
-            }
-            if (fanspin > 0) fanspin--;
-            switch (compstate) {
-                case COMP_LOCKOUT:
-                    // Make sure compressor isn't cycling too fast
-                    Compressor_OnOff(false, fanspin > 0, 0); // Stopped
-                    break;
-                case COMP_OFF:
-                    if (tempdiff >= 1 && comp_timer == 0) { // 0.1C above setpoint
-                        comp_timer = 2;
-                        fanspin = 2;
-                    }
-                    Compressor_OnOff(false, fanspin > 0, 0); // Stopped
-                    break;
-                case COMP_STARTING:
-                    // Use Modbus compressor power if set, otherwise use temperature-based control
-                    uint8_t modbus_power = Modbus_GetCompressorPower();
-                    uint8_t max_power = Modbus_GetMaxPowerLimit();
-                    if (modbus_power > 0 && max_power > 0) {
-                        // Scale speed based on max power limit
-                        uint32_t maxSpeed = (20UL * max_power) / 100;
-                        speedidx = (uint8_t)((modbus_power * maxSpeed) / 100);
-                    } else {
-                        speedidx = (temp_setpoint10 > 0) ? Compressor_GetMinSpeedIdx() : Compressor_GetDefaultSpeedIdx();
-                    }
-                    Compressor_OnOff(true, true, speedidx);
-                    if (comp_timer == 0) {
-                        temp_rate_tick = 0;
-                        temp_rate = 0;
-                        last_temp = temperature10;
-                        comp_timer = 30;
-                    }
-                    break;
-                case COMP_RUN:
-                    // Use Modbus compressor power if set
-                    modbus_power = Modbus_GetCompressorPower();
-                    max_power = Modbus_GetMaxPowerLimit();
-                    if (modbus_power > 0 && max_power > 0) {
-                        // Scale speed based on max power limit
-                        uint32_t maxSpeed = (20UL * max_power) / 100;
-                        speedidx = (uint8_t)((modbus_power * maxSpeed) / 100);
-                    } else {
-                        // Use normal temperature control if no Modbus power set
-                        speedidx = comp_speed;
-                        temp_rate_tick++;
-                        if (temp_rate_tick == 60) {
-                            temp_rate = temperature10 - last_temp;
-                            // Original temperature control logic preserved
-                if (tempdiff > 100 && AnalogGetCompPower() < 45) {
-                                speedidx = max;
-                            } else if (tempdiff > 40) {
-                                if (temp_rate > -5 && speedidx < max) {
-                                    speedidx++;
-                                } else if (temp_rate < -5 && speedidx > min) {
-                                    speedidx--;
-                                }
-                            } else {
-                                if (temp_rate > -1 && speedidx < max) {
-                                    speedidx++;
-                                } else if (temp_rate < -1 && speedidx > min) {
-                                    speedidx--;
-                                }
-                            }
-                            temp_rate_tick = 0;
-                            last_temp = temperature10;
-                        }
-                    }
-                if (AnalogGetCompPower() > 45 && speedidx > min) {
-                        speedidx--;
-                    }
-                    if (tempdiff <= 0) {
-                        compstate = COMP_LOCKOUT;
-                        comp_timer = 99;
-                        fanspin = 120;
-                        temp_rate = 0;
-                    } else {
-                        Compressor_OnOff(true, true, speedidx);
-                    }
-                    break;
-            }
-            comp_speed = speedidx;
-        }
+        comp.running = Compressor_IsOn();
+        update_compressor_state(&comp, &temp, compressor_check);
         
         // Update display context with latest measurements and state
-        display.voltage = voltage;
-        display.fancurrent = fancurrent;
+        display.voltage = AnalogGetVoltage();
+        display.fancurrent = AnalogGetFanCurrent();
         display.comppower = AnalogGetCompPower();
-        display.comp_timer = comp_timer;
-        display.comp_speed = comp_speed;
-        display.comp_on = comp_on;
-        display.temperature10 = temperature10;
-        display.last_temp = last_temp;
-        display.temp_rate = temp_rate;
-
-        // Handle key presses and update display
-        Display_HandleKeyPress(&display, pressed_keys);
-        Display_Update(&display, pressed_keys);
+        display.comp_timer = comp.timer;
+        display.comp_speed = comp.speed;
+        display.comp_on = comp.running;
+        display.temperature10 = temp.temperature10;
+        display.last_temp = temp.last_temp;
+        display.temp_rate = temp.temp_rate;
 
         // Update on/off control
         if (display.on) {
             IO_LightEna_SetHigh();
         } else {
             IO_LightEna_SetLow();
-            pressed_keys = 0;
             compressor_check = false;
         }
 
-        // Update long press detection for on/off
-        if (keys & KEY_ONOFF) {
-            if (longpress <= 20) longpress++;
-            if (longpress == 20) {
-                display.newon = !display.on;
-                display.state = DISP_IDLE;
-                if (display.newon) {
-                    display.idletimer = 0;
-                    display.dimtimer = 0;
-                } else {
-                    Compressor_OnOff(false, false, 0);
-                    comp_timer = 20;
-                    compstate = COMP_LOCKOUT;
-                }
-            }
-        } else {
-            longpress = 0;
-        }
-
-        if (display.state == DISP_IDLE) { // Perform housekeeping if we need to update settings
-            if (display.newon != display.on) {
-                display.on = display.newon;
-                Settings_SaveOnOff(display.on);
-            }
-            // Update temperature setpoint from Modbus if changed
-            int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
-            if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
-                display.newtemp = modbus_temp;
-            }
-            if (display.newtemp != display.temp_setpoint) {
-                display.temp_setpoint = display.newtemp;
-                display.temp_setpoint10 = display.newtemp * 10;
-                temp_setpoint10 = display.temp_setpoint10; // Update local copy
-                Settings_SaveTemp(display.temp_setpoint);
-                Modbus_SetTargetTemperature(display.temp_setpoint10);
-            }
-            if (display.newfahrenheit != display.fahrenheit) {
-                display.fahrenheit = display.newfahrenheit;
-                Settings_SaveUnit(display.fahrenheit);
-            }
-            if (display.newbattmon != display.battmon) {
-                display.battmon = display.newbattmon;
-                Settings_SaveBattMon(display.battmon);
-            }
-        }
-
-        lastkeys = keys;
+        update_settings(&display, &temp.temp_setpoint10);
     }
 }
