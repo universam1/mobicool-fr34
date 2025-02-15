@@ -21,23 +21,10 @@
 #include "analog.h"
 #include "irmcf183.h"
 #include "modbus.h"
-
-#define MAX_TEMP (10)
-#define MIN_TEMP (-18)
-#define DEFAULT_TEMP MAX_TEMP
+#include "settings.h"
 
 #define DEFAULT_BRIGHT (4)
 #define DIM_BRIGHT (0)
-
-#define MAGIC ('W')
-
-typedef enum {
-    EE_MAGIC = 0,
-    EE_ONOFF,
-    EE_TEMP,
-    EE_UNIT,
-    EE_BATTMON,
-} eedata_t;
 
 typedef enum {
     IDLE = 0,
@@ -62,13 +49,6 @@ typedef enum {
     COMP_STARTING,
     COMP_RUN,
 } comp_state_t;
-
-typedef enum {
-    BMON_DIS = 0,
-    BMON_LOW,
-    BMON_MED,
-    BMON_HIGH
-} bmon_t;
 
 typedef enum {
     BMON_WILDCARD = 0,
@@ -115,32 +95,12 @@ void main(void) {
     uint8_t comp_timer = 20;
     uint8_t comp_speed = 0;
     comp_state_t compstate = COMP_LOCKOUT;
-    bool eeinvalid = false;
-
-    if (DATAEE_ReadByte(EE_MAGIC) != MAGIC) {
-        eeinvalid = true;
-    }
-    bool on = DATAEE_ReadByte(EE_ONOFF);
-    int8_t temp_setpoint = DATAEE_ReadByte(EE_TEMP);
-    if (temp_setpoint < MIN_TEMP || temp_setpoint > MAX_TEMP) {
-        eeinvalid = true;
-    }
-    bool fahrenheit = DATAEE_ReadByte(EE_UNIT);
-    bmon_t battmon = DATAEE_ReadByte(EE_BATTMON);
-    if (battmon > BMON_HIGH) {
-        eeinvalid = true;
-    }
-    if (eeinvalid) {
-        on = true;
-        DATAEE_WriteByte(EE_ONOFF, on);
-        temp_setpoint = DEFAULT_TEMP;
-        DATAEE_WriteByte(EE_TEMP, temp_setpoint);
-        fahrenheit = false;
-        DATAEE_WriteByte(EE_UNIT, fahrenheit);
-        battmon = BMON_LOW;
-        DATAEE_WriteByte(EE_BATTMON, battmon);
-        DATAEE_WriteByte(EE_MAGIC, MAGIC);
-    }
+    settings_t settings;
+    Settings_Initialize(&settings);
+    bool on = settings.on;
+    int8_t temp_setpoint = settings.temp_setpoint;
+    bool fahrenheit = settings.fahrenheit;
+    bmon_t battmon = settings.battmon;
     
     AnalogUpdate();
     uint8_t longpress = 0;
@@ -375,7 +335,7 @@ void main(void) {
         if (cur_state == IDLE) { // Perform housekeeping if we need to update settings
             if (newon != on) {
                 on = newon;
-                DATAEE_WriteByte(EE_ONOFF, on);
+                Settings_SaveOnOff(on);
             }
             // Update temperature setpoint from Modbus if changed
             int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
@@ -385,16 +345,16 @@ void main(void) {
             if (newtemp != temp_setpoint) {
                 temp_setpoint = newtemp;
                 temp_setpoint10 = newtemp * 10;
-                DATAEE_WriteByte(EE_TEMP, temp_setpoint);
+                Settings_SaveTemp(temp_setpoint);
                 Modbus_SetTargetTemperature(temp_setpoint10);
             }
             if (newfahrenheit != fahrenheit) {
                 fahrenheit = newfahrenheit;
-                DATAEE_WriteByte(EE_UNIT, fahrenheit);
+                Settings_SaveUnit(fahrenheit);
             }
             if (newbattmon != battmon) {
                 battmon = newbattmon;
-                DATAEE_WriteByte(EE_BATTMON, battmon);
+                Settings_SaveBattMon(battmon);
             }
         }
 
