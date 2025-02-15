@@ -12,7 +12,7 @@ void Display_Initialize(void) {
 }
 
 uint8_t Display_GetLEDs(display_context_t* ctx) {
-    return /*orange*/!ctx->comp_on << 7 | /*err*/ctx->battlow << 6 | /*green*/ctx->comp_on << 4;
+    return (uint8_t)((!ctx->comp_on << 7) | (ctx->battlow << 6) | (ctx->comp_on << 4));
 }
 
 void Display_TimerTick(display_context_t* ctx) {

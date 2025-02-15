@@ -170,7 +170,12 @@ uint8_t FormatDigits(uint8_t* outbuf, int16_t inum, uint8_t mindigits) {
     // point operation)
     if (inum < -199 || inum > 999) return 0;
     bool isnegative = inum < 0;
-    uint16_t num = isnegative ? -inum : inum;
+    uint16_t num;
+    if (isnegative) {
+        num = (uint16_t)(-inum);
+    } else {
+        num = (uint16_t)inum;
+    }
     uint8_t digits = 1;
     if (num > 9) digits++;
     if (num > 99) digits++;

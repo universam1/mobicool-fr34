@@ -101,7 +101,7 @@ static adc_result_t GetConversion(adc_channel_t channel) {
 
 void AnalogUpdate(void) {
     uint16_t tmp = GetConversion( AN5_NTC );
-    int16_t offset = (tmp - NTCMAPOFFSET) >> NTCMAPSHIFT;
+    int16_t offset = (int16_t)((int16_t)tmp - NTCMAPOFFSET) >> NTCMAPSHIFT;
     if (offset < 0) {
         s_temp10 = -32767;
     } else if( offset > NTCMAPSIZE ) {
@@ -118,7 +118,7 @@ void AnalogUpdate(void) {
     uint16_t compressor = GetConversion( AN8_CompCur ); // Compressor current in 20mA steps
     s_comppower = 99; // Outside limits
     if (compressor < 0x100) { // Avoid overflow
-        uint8_t voltage = (adcval_v + 2) >> 2; // Fit in byte + round
+        uint8_t voltage = (uint8_t)((adcval_v + 2) >> 2); // Fit in byte + round
         uint16_t tmp = compressor * voltage;
         s_comppower = (tmp + 128) >> 8; // Divide with rounding
     }

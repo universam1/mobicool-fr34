@@ -9,7 +9,7 @@ build: .build-pre .build-post
 
 .build-pre:
 	mkdir -p dist/default/production
-	xc8-cc -mcpu=16F1829 -O1 \
+	xc8-cc -mcpu=16F1829 -O2 \
 	-o dist/default/production/MobicoolFR34.X.production.hex \
 	main.c analog.c irmcf183.c tm1620b.c settings.c display.c \
 	mcc_generated_files/adc.c mcc_generated_files/device_config.c \

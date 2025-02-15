@@ -143,24 +143,32 @@ void Modbus_HandleRequest(void) {
     if (rxIndex < 4) return; // Too short for valid frame
     
     // Verify CRC
-    uint16_t receivedCrc = (rxBuffer[rxIndex - 1] << 8) | rxBuffer[rxIndex - 2];
-    uint16_t calculatedCrc = ModbusCRC16(rxBuffer, rxIndex - 2);
+    uint16_t receivedCrc = (uint16_t)((uint16_t)rxBuffer[rxIndex - 1] << 8) | rxBuffer[rxIndex - 2];
+    
+    // Create a small buffer for CRC calculation (maximum request size we need to handle)
+    uint8_t tempBuffer[32];
+    uint8_t crcLength = (rxIndex > 34) ? 32 : (rxIndex - 2);
+    for(uint8_t i = 0; i < crcLength; i++) {
+        tempBuffer[i] = rxBuffer[i];
+    }
+    uint16_t calculatedCrc = ModbusCRC16(tempBuffer, crcLength);
+    
     if (receivedCrc != calculatedCrc) return;
     
     // Check if message is for us
     if (rxBuffer[0] != MODBUS_ADDRESS) return;
     
     uint8_t function = rxBuffer[1];
-    uint16_t address = (rxBuffer[2] << 8) | rxBuffer[3];
+    uint16_t address = (uint16_t)((uint16_t)rxBuffer[2] << 8) | rxBuffer[3];
     
     switch (function) {
         case MODBUS_FC_READ_HOLDING_REGISTERS: {
-            uint16_t quantity = (rxBuffer[4] << 8) | rxBuffer[5];
+            uint16_t quantity = (uint16_t)((uint16_t)rxBuffer[4] << 8) | rxBuffer[5];
             if (quantity > 5) break; // Maximum 5 registers
             
             txBuffer[0] = MODBUS_ADDRESS;
             txBuffer[1] = MODBUS_FC_READ_HOLDING_REGISTERS;
-            txBuffer[2] = quantity * 2; // Number of bytes
+            txBuffer[2] = (uint8_t)(quantity * 2); // Number of bytes
             
             uint8_t byteIndex = 3;
             for (uint16_t i = 0; i < quantity; i++) {
@@ -205,7 +213,7 @@ case MODBUS_FC_WRITE_SINGLE_REGISTER: {
                 Modbus_SendResponse(txBuffer, 6);
             }
             else if (address == REG_COMP_POWER || address == REG_COMP_POWER_MAX) {
-                uint16_t newPower = (rxBuffer[4] << 8) | rxBuffer[5];
+                uint16_t newPower = (uint16_t)((uint16_t)rxBuffer[4] << 8) | rxBuffer[5];
                 if (newPower <= 100) { // Validate 0-100%
                     if (address == REG_COMP_POWER) {
                         Modbus_SetCompressorPower((uint8_t)newPower);

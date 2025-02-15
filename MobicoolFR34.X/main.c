@@ -145,7 +145,7 @@ static bool update_battery(battery_context_t* battery, display_context_t* displa
     battery->numvolts++;
     
     if (battery->numvolts == AVERAGING_SAMPLES) {
-        uint16_t volt = (battery->voltacc + TEMPERATURE_OFFSET) >> 6;
+        uint16_t volt = (uint16_t)((battery->voltacc + TEMPERATURE_OFFSET) >> 6);
         volt = (volt + 50) / 100; // Scale to tenths of Volts
         bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
         
@@ -300,7 +300,7 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
     
     int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
     if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
-        display->newtemp = modbus_temp;
+        display->newtemp = (int8_t)modbus_temp;
     }
     
     if (display->newtemp != display->temp_setpoint) {
