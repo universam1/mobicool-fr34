@@ -4,23 +4,9 @@
         {
             "label": "Build Project",
             "type": "shell",
-            "command": "xc8-cc",
+            "command": "make",
             "args": [
-                "-mcpu=16F1829",
-                "-o",
-                "dist/default/production/MobicoolFR34.X.production.hex",
-                "main.c",
-                "analog.c",
-                "irmcf183.c",
-                "tm1620b.c",
-                "mcc_generated_files/adc.c",
-                "mcc_generated_files/device_config.c",
-                "mcc_generated_files/eusart.c",
-                "mcc_generated_files/mcc.c",
-                "mcc_generated_files/memory.c",
-                "mcc_generated_files/pin_manager.c",
-                "mcc_generated_files/tmr1.c",
-                "modbus.c"
+                "build"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

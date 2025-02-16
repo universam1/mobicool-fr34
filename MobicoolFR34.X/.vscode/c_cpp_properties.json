@@ -4,11 +4,27 @@
             "name": "XC8",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/mcc_generated_files"
+                "${workspaceFolder}/mcc_generated_files",
+                "/opt/microchip/xc8/v2.41/pic/include/**",
+                "/opt/microchip/xc8/v2.41/pic/include/proc"
             ],
-            "defines": [],
+            "defines": [
+                "__XC8",
+                "__PICC__",
+                "_16F15376",
+                "__16F15376",
+                "XPRJ_default=default"
+            ],
             "cStandard": "c99",
-            "intelliSenseMode": "gcc-x64"
+            "intelliSenseMode": "msvc-x64",
+            "compilerPath": "/opt/microchip/xc8/v2.41/bin/xc8-cc",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "/opt/microchip/xc8/v2.41/pic/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
         }
     ],
     "version": 4
