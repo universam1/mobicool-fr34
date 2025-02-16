@@ -24,9 +24,6 @@
 #include "display.h"
 #include "tm1620b.h"
 
-// Temperature averaging buffer size
-#define AVERAGING_SAMPLES 64
-#define TEMPERATURE_OFFSET 32
 
 typedef enum {
     COMP_LOCKOUT = 0,
@@ -131,16 +128,33 @@ static void system_init(display_context_t* display) {
 }
 
 static void update_temperature(temp_context_t* temp) {
-    temp->tempacc += AnalogGetTemperature10();
+    int16_t current_temp = AnalogGetTemperature10();
+    
+    // Validate temperature reading
+    if (current_temp < MIN_VALID_TEMP || current_temp > MAX_VALID_TEMP) {
+        return; // Skip invalid readings
+    }
+    
+    temp->tempacc += current_temp;
     temp->numtemps++;
     if (temp->numtemps == AVERAGING_SAMPLES) {
         temp->temperature10 = (temp->tempacc + TEMPERATURE_OFFSET) >> 6;
+        // Bounds check the averaged result
+        if (temp->temperature10 < MIN_VALID_TEMP) {
+            temp->temperature10 = MIN_VALID_TEMP;
+        } else if (temp->temperature10 > MAX_VALID_TEMP) {
+            temp->temperature10 = MAX_VALID_TEMP;
+        }
         temp->tempacc = temp->numtemps = 0;
     }
 }
 
 static bool update_battery(battery_context_t* battery, display_context_t* display, compressor_context_t* comp) {
     uint16_t voltage = AnalogGetVoltage();
+    if (voltage == 0 || voltage > 3000) { // Invalid voltage reading (>30V)
+        return false;
+    }
+    
     battery->voltacc += voltage;
     battery->numvolts++;
     
@@ -148,23 +162,27 @@ static bool update_battery(battery_context_t* battery, display_context_t* displa
         uint16_t volt = (uint16_t)((battery->voltacc + TEMPERATURE_OFFSET) >> 6);
         volt = (volt + 50) / 100; // Scale to tenths of Volts
         bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
+        bool voltage_changed = false;
         
         for (uint8_t i = 0; i < NUM_BMON_LEVELS; i++) {
             if (levels[i].level == display->battmon &&
                 (levels[i].supply == BMON_WILDCARD || levels[i].supply == supply)) {
-                if (volt < levels[i].cutout && !display->battlow) {
+                // Add hysteresis to prevent oscillation
+                if (volt < (levels[i].cutout - VOLTAGE_HYSTERESIS) && !display->battlow) {
                     display->battlow = true;
                     Compressor_OnOff(false, false, 0);
-                    comp->timer = 20;
+                    comp->timer = COMP_LOCKOUT_TIME;
                     comp->state = COMP_LOCKOUT;
-                } else if (volt > levels[i].restart && display->battlow) {
+                    voltage_changed = true;
+                } else if (volt > (levels[i].restart + VOLTAGE_HYSTERESIS) && display->battlow) {
                     display->battlow = false;
+                    voltage_changed = true;
                 }
                 break;
             }
         }
         battery->voltacc = battery->numvolts = 0;
-        return true;
+        return voltage_changed;
     }
     return false;
 }
@@ -214,10 +232,45 @@ static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_conte
     return speedidx;
 }
 
+static void handle_compressor_lockout(compressor_context_t* comp) {
+    Compressor_OnOff(false, comp->fanspin > 0, 0);
+}
+
+static void handle_compressor_off(compressor_context_t* comp, temp_context_t* temp) {
+    if (temp->temperature10 - temp->temp_setpoint10 >= 1 && comp->timer == 0) {
+        comp->timer = COMP_START_DELAY;
+        comp->fanspin = COMP_START_DELAY;
+    }
+    Compressor_OnOff(false, comp->fanspin > 0, 0);
+}
+
+static void handle_compressor_starting(compressor_context_t* comp, temp_context_t* temp) {
+    comp->speed = calculate_compressor_speed(comp, temp);
+    Compressor_OnOff(true, true, comp->speed);
+    if (comp->timer == 0) {
+        temp->temp_rate_tick = 0;
+        temp->temp_rate = 0;
+        temp->last_temp = temp->temperature10;
+        comp->timer = COMP_MIN_RUN_TIME;
+    }
+}
+
+static void handle_compressor_running(compressor_context_t* comp, temp_context_t* temp) {
+    comp->speed = calculate_compressor_speed(comp, temp);
+    int16_t tempdiff = temp->temperature10 - temp->temp_setpoint10;
+    
+    if (tempdiff <= 0) {
+        comp->state = COMP_LOCKOUT;
+        comp->timer = COMP_LOCKOUT_TIME;
+        comp->fanspin = FAN_SPINDOWN_TIME;
+        temp->temp_rate = 0;
+    } else {
+        Compressor_OnOff(true, true, comp->speed);
+    }
+}
+
 static void update_compressor_state(compressor_context_t* comp, temp_context_t* temp, bool check_enabled) {
     if (!check_enabled) return;
-
-    int16_t tempdiff = (temp->temperature10 - temp->temp_setpoint10);
     
     if (comp->timer > 0) {
         comp->timer--;
@@ -228,38 +281,19 @@ static void update_compressor_state(compressor_context_t* comp, temp_context_t* 
     
     switch (comp->state) {
         case COMP_LOCKOUT:
-            Compressor_OnOff(false, comp->fanspin > 0, 0);
+            handle_compressor_lockout(comp);
             break;
             
         case COMP_OFF:
-            if (tempdiff >= 1 && comp->timer == 0) {
-                comp->timer = 2;
-                comp->fanspin = 2;
-            }
-            Compressor_OnOff(false, comp->fanspin > 0, 0);
+            handle_compressor_off(comp, temp);
             break;
             
         case COMP_STARTING:
-            comp->speed = calculate_compressor_speed(comp, temp);
-            Compressor_OnOff(true, true, comp->speed);
-            if (comp->timer == 0) {
-                temp->temp_rate_tick = 0;
-                temp->temp_rate = 0;
-                temp->last_temp = temp->temperature10;
-                comp->timer = 30;
-            }
+            handle_compressor_starting(comp, temp);
             break;
             
         case COMP_RUN:
-            comp->speed = calculate_compressor_speed(comp, temp);
-            if (tempdiff <= 0) {
-                comp->state = COMP_LOCKOUT;
-                comp->timer = 99;
-                comp->fanspin = 120;
-                temp->temp_rate = 0;
-            } else {
-                Compressor_OnOff(true, true, comp->speed);
-            }
+            handle_compressor_running(comp, temp);
             break;
     }
 }
@@ -268,8 +302,8 @@ static void handle_key_press(uint8_t keys, uint8_t* lastkeys, uint8_t* longpress
     uint8_t pressed_keys = keys & ~(*lastkeys);
     
     if (keys & KEY_ONOFF) {
-        if (*longpress <= 20) (*longpress)++;
-        if (*longpress == 20) {
+        if (*longpress <= LONG_PRESS_TIME) (*longpress)++;
+        if (*longpress == LONG_PRESS_TIME) {
             display->newon = !display->on;
             display->state = DISP_IDLE;
             if (display->newon) {
@@ -277,7 +311,7 @@ static void handle_key_press(uint8_t keys, uint8_t* lastkeys, uint8_t* longpress
                 display->dimtimer = 0;
             } else {
                 Compressor_OnOff(false, false, 0);
-                comp->timer = 20;
+                comp->timer = COMP_LOCKOUT_TIME;
                 comp->state = COMP_LOCKOUT;
             }
         }
