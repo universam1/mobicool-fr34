@@ -79,6 +79,66 @@ Program the resulting `.hex` file using any PIC programmer (e.g. PICkit 3) via t
 The ICSP connector (J2) is a standard pinout one where pin 1 (MCLR) being the square one. Note that the system voltage is 3.3V and the LVP program fuse most likely was disabled in the pre-programmed parts, so 9V (not 12V!) has to be applied to MCLR to program.
 
 
+## WiFi Remote Control (ESP32 Companion)
+
+The `esp32-companion/` directory contains a self-contained [PlatformIO](https://platformio.org/) project for an **ESP32** module that acts as a WiFi access point and web dashboard, allowing you to monitor and control the cooler from any phone or browser — no router required.
+
+### Features
+
+| Feature | Detail |
+|---------|--------|
+| WiFi AP | SSID `FR34-Cooler`, open network, IP `192.168.4.1` |
+| Web UI  | Vue 3 SPA with live metrics, setpoint ±0.5 °C buttons, compressor override & power-cap sliders |
+| Protocol | WebSocket for real-time push updates (1 s interval) |
+| Modbus  | RTU master, 9 600 baud, polls all 6 cooler registers |
+| REST API | `GET /api/state` returns current state as JSON |
+
+### Wiring
+
+See [`esp32-companion/WIRING.md`](esp32-companion/WIRING.md) for the full wiring table and ASCII diagram.  
+**TL;DR** — three wires, no level-shifter needed (both sides are 3.3 V):
+
+| Cooler J4 | Signal | ESP32 GPIO |
+|:---------:|--------|:----------:|
+| pin 2     | PIC TX (RA5) | GPIO 16 (RX2) |
+| pin 3     | PIC RX (RC7) | GPIO 17 (TX2) |
+| pin 4     | GND          | GND           |
+
+### Building & flashing the ESP32
+
+**Prerequisites:** [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/index.html) or the PlatformIO IDE extension for VS Code.
+
+```bash
+cd esp32-companion
+pio run --target upload       # build + flash
+pio device monitor            # optional: serial output at 115200 baud
+```
+
+PlatformIO will automatically fetch all library dependencies on first build.
+
+### Using the dashboard
+
+1. Connect your phone or laptop to the `FR34-Cooler` WiFi network.
+2. Open a browser and navigate to `http://192.168.4.1/`.
+3. The dashboard shows live temperature, voltage, fan current, and compressor duty cycle.
+4. Use the **+0.5 / −0.5** buttons to change the target temperature.
+5. Drag the **Compressor Override** slider to force a fixed duty cycle (0 = auto).
+6. Drag the **Power Limit** slider to set a hard cap on the compressor (useful for battery management).
+
+### Project structure
+
+```
+esp32-companion/
+├── platformio.ini          # PlatformIO project configuration
+└── src/
+    ├── main.cpp            # WiFi AP, HTTP server, WebSocket, poll loop
+    ├── modbus_master.h     # CoolerState struct + ModbusMaster declaration
+    ├── modbus_master.cpp   # Modbus RTU FC03/FC06 implementation
+    └── web_ui.h            # Vue 3 SPA embedded as C string literal
+```
+
+---
+
 Here are two final images showing the remaining parts inside and the exterior:
 ![Interior](Images/WancoolCompressor.JPG "Compressor and power supply")
 ![Exterior](Images/MobicoolFR34ExteriorOriginalFirmware.JPG "Exterior of Mobicool FR34, with original firmware")
