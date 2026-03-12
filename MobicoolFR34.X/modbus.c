@@ -1,14 +1,16 @@
 #include "modbus.h"
-#include "mcc_generated_files/tmr1.h"
 #include "analog.h"
+#include <stdbool.h>
 
-// Timer0 is used for bit timing in software UART
-// For 9600 baud with 1MHz clock:
-// Bit time = 1000000/9600 = ~104µs
-// With 1MHz clock and 1:4 prescaler, each TMR0 tick is 4µs
-// So we need 26 TMR0 ticks per bit
+// Timer0 is used for both bit timing and inter-frame gap detection.
+// For 9600 baud with 1MHz instruction clock:
+//   Bit time = 1000000/9600 = ~104µs
+//   With 1:4 prescaler, each TMR0 tick is 4µs → 26 ticks per bit
+//   TMR0 overflow period = 256 × 4µs = 1.024ms
+//   Modbus 3.5-char silence = 3.65ms → 4 overflows required
 #define BIT_TIME 26
 #define HALF_BIT_TIME 13
+#define MODBUS_SILENCE_OVERFLOWS 4  // TMR0 overflows without a byte = end of frame
 
 static void Timer0_Initialize(void) {
     // Configure Timer0 for software UART timing
@@ -27,6 +29,11 @@ static uint8_t rxIndex = 0;
 static int16_t targetTemperature = 50;  // Default 5.0°C
 static uint8_t compressorPower = 0;     // Default 0%
 static uint8_t compressorMaxPower = 100;// Default 100%
+
+// TMR0 overflow counter for inter-frame gap timing.
+// Polled (not interrupt-driven); uint8_t wraps every ~262ms which is fine.
+static uint8_t t0_ovf = 0;              // increments on each TMR0 overflow
+static uint8_t t0_ovf_at_last_byte = 0; // snapshot taken when last byte arrived
 
 // CRC lookup table
 static const uint16_t crcTable[] = {
@@ -109,21 +116,29 @@ void Modbus_Initialize(void) {
 }
 
 void Modbus_Process(void) {
+    // Poll TMR0 overflow flag to count elapsed time since last byte.
+    // The bit-bang functions use TMR0 directly and may leave TMR0IF set;
+    // clearing it here is safe because we only use the overflow *count*,
+    // not the raw timer value, for the inter-frame gap.
+    if (INTCONbits.TMR0IF) {
+        INTCONbits.TMR0IF = 0;
+        t0_ovf++;
+    }
+
     uint8_t rcvByte;
     if (ModbusUART_ReceiveByte(&rcvByte)) {
         rxBuffer[rxIndex] = rcvByte;
-        
-        // Basic Modbus RTU framing - wait for 3.5 character times between frames
-        // At 9600 baud, one character is ~1ms, so we'll use TMR1 for timeout
-        TMR1_Reload();
-        
+        t0_ovf_at_last_byte = t0_ovf;  // reset the inter-frame gap counter
+
         if (rxIndex < MODBUS_BUFFER_SIZE - 1) {
             rxIndex++;
         }
     }
-    
-    // Check for frame timeout (3.5 char times)
-    if (rxIndex > 0 && TMR1_HasOverflowOccured()) {
+
+    // End-of-frame: MODBUS_SILENCE_OVERFLOWS TMR0 overflows (~4ms) with no new byte.
+    // uint8_t subtraction wraps correctly if t0_ovf rolls over.
+    if (rxIndex > 0 &&
+        (uint8_t)(t0_ovf - t0_ovf_at_last_byte) >= MODBUS_SILENCE_OVERFLOWS) {
         Modbus_HandleRequest();
         rxIndex = 0;
     }
