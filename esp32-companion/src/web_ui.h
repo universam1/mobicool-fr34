@@ -12,19 +12,54 @@ static const char WEB_UI[] = R"rawhtml(
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>FR34 Cooler</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  darkMode: 'class',
-  theme: {
-    extend: {
-      colors: {
-        brand: { 400:'#38bdf8', 600:'#0284c7', 800:'#075985' }
-      }
-    }
-  }
-}
-</script>
+<style>
+/* ── Reset ───────────────────────────────────── */
+*,::before,::after{box-sizing:border-box}
+body{margin:0}
+/* ── Layout ──────────────────────────────────── */
+.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}
+.items-center{align-items:center}.justify-between{justify-content:space-between}
+.grid{display:grid}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gap-1{gap:.25rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}
+/* ── Sizing ───────────────────────────────────── */
+.w-8{width:2rem}.h-8{height:2rem}.w-full{width:100%}.min-h-screen{min-height:100vh}
+.max-w-2xl{max-width:42rem}
+/* ── Spacing ──────────────────────────────────── */
+.mx-auto{margin-left:auto;margin-right:auto}
+.mb-3{margin-bottom:.75rem}.mb-6{margin-bottom:1.5rem}
+.mt-1{margin-top:.25rem}.mt-2{margin-top:.5rem}
+.p-4{padding:1rem}.p-5{padding:1.25rem}
+.pb-4{padding-bottom:1rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}
+/* ── Typography ───────────────────────────────── */
+.font-sans{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}
+.text-xs{font-size:.75rem;line-height:1rem}
+.text-sm{font-size:.875rem;line-height:1.25rem}
+.text-lg{font-size:1.125rem;line-height:1.75rem}
+.text-xl{font-size:1.25rem;line-height:1.75rem}
+.text-2xl{font-size:1.5rem;line-height:2rem}
+.text-4xl{font-size:2.25rem;line-height:2.5rem}
+.font-normal{font-weight:400}.font-semibold{font-weight:600}.font-bold{font-weight:700}
+.tracking-tight{letter-spacing:-.025em}.tracking-widest{letter-spacing:.1em}
+.uppercase{text-transform:uppercase}.text-center{text-align:center}
+/* ── Colors ───────────────────────────────────── */
+.text-slate-100{color:#f1f5f9}.text-slate-400{color:#94a3b8}
+.text-slate-500{color:#64748b}.text-slate-600{color:#475569}
+.text-emerald-400{color:#34d399}.text-sky-400,.text-brand-400{color:#38bdf8}
+.text-violet-400{color:#a78bfa}.text-yellow-400{color:#facc15}
+.text-orange-400{color:#fb923c}
+.bg-slate-700{background-color:#334155}
+/* ── Borders / Radius ─────────────────────────── */
+.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}
+/* ── Interaction ──────────────────────────────── */
+.transition-colors{transition-property:color,background-color,border-color;transition-duration:150ms}
+.hover\:bg-slate-600:hover{background-color:#475569}
+.active\:bg-slate-500:active{background-color:#64748b}
+.accent-violet-500{accent-color:#8b5cf6}.accent-brand-400{accent-color:#38bdf8}
+/* ── SVG helpers ──────────────────────────────── */
+.fill-none{fill:none}.stroke-current{stroke:currentColor}
+</style>
 <style>
   body { background:#0f172a; }
   .card { background:#1e293b; border:1px solid #334155; }
@@ -155,7 +190,7 @@ tailwind.config = {
   </main>
 </div>
 
-<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="/vue.js"></script>
 <script>
 const { createApp, ref, computed } = Vue;
 

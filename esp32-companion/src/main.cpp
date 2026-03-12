@@ -27,6 +27,7 @@
 
 #include "modbus_master.h"
 #include "web_ui.h"
+#include "vue_js.h"
 
 // ── Configuration ─────────────────────────────────────────────────────────
 static constexpr char     AP_SSID[]   = "FR34-Cooler";
@@ -122,6 +123,12 @@ void setup() {
     // ── HTTP routes ──
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send_P(200, "text/html", WEB_UI);
+    });
+
+    server.on("/vue.js", HTTP_GET, [](AsyncWebServerRequest* req) {
+        AsyncWebServerResponse* resp = req->beginResponse_P(200, "application/javascript", (const uint8_t*)VUE_JS, sizeof(VUE_JS) - 1);
+        resp->addHeader("Cache-Control", "public, max-age=31536000, immutable");
+        req->send(resp);
     });
 
     // Minimal API endpoint for health checks / ESPHome/HomeAssistant polling
