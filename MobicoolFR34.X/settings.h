@@ -19,8 +19,8 @@ typedef enum {
 #define DEFAULT_TEMP MAX_TEMP
 // System constants
 #define AVERAGING_SAMPLES 64
-#define TEMPERATURE_OFFSET 32
-#define MIN_VALID_TEMP (-150)  // -15.0°C
+#define AVERAGING_ROUNDING 32  // = AVERAGING_SAMPLES/2, added before >>6 for correct rounding
+#define MIN_VALID_TEMP (-200)  // -20.0°C (below the -18°C minimum setpoint)
 #define MAX_VALID_TEMP 500     // 50.0°C
 #define VOLTAGE_HYSTERESIS 5   // 0.5V hysteresis for battery protection
 #define COMP_START_DELAY 2     // Compressor start delay in seconds

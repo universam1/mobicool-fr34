@@ -104,7 +104,7 @@ void AnalogUpdate(void) {
     int16_t offset = (int16_t)((int16_t)tmp - NTCMAPOFFSET) >> NTCMAPSHIFT;
     if (offset < 0) {
         s_temp10 = -32767;
-    } else if( offset > NTCMAPSIZE ) {
+    } else if( offset >= NTCMAPSIZE ) {
         s_temp10 = 32767;
     } else {
         s_temp10 = ntcmap[offset];

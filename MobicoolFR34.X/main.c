@@ -138,7 +138,7 @@ static void update_temperature(temp_context_t* temp) {
     temp->tempacc += current_temp;
     temp->numtemps++;
     if (temp->numtemps == AVERAGING_SAMPLES) {
-        temp->temperature10 = (temp->tempacc + TEMPERATURE_OFFSET) >> 6;
+        temp->temperature10 = (temp->tempacc + AVERAGING_ROUNDING) >> 6;
         // Bounds check the averaged result
         if (temp->temperature10 < MIN_VALID_TEMP) {
             temp->temperature10 = MIN_VALID_TEMP;
@@ -159,7 +159,7 @@ static bool update_battery(battery_context_t* battery, display_context_t* displa
     battery->numvolts++;
     
     if (battery->numvolts == AVERAGING_SAMPLES) {
-        uint16_t volt = (uint16_t)((battery->voltacc + TEMPERATURE_OFFSET) >> 6);
+        uint16_t volt = (uint16_t)((battery->voltacc + AVERAGING_ROUNDING) >> 6);
         volt = (volt + 50) / 100; // Scale to tenths of Volts
         bmon_volt_t supply = (volt > THRESH_12V_24V) ? BMON_24V : BMON_12V;
         bool voltage_changed = false;

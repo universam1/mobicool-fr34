@@ -51,36 +51,36 @@ static void ModbusUART_Initialize(void) {
 }
 
 static void ModbusUART_TransmitByte(uint8_t data) {
-    uint16_t tmpTMR0 = TMR0;
+    uint8_t tmpTMR0 = (uint8_t)TMR0;
     
     // Start bit
     MODBUS_TX_PIN = 0;
     tmpTMR0 += BIT_TIME;
-    while(TMR0 < tmpTMR0);
+    while((uint8_t)TMR0 != tmpTMR0);
     
     // Data bits
     for(uint8_t i = 0; i < 8; i++) {
         MODBUS_TX_PIN = (data & 0x01) ? 1 : 0;
         data >>= 1;
         tmpTMR0 += BIT_TIME;
-        while(TMR0 < tmpTMR0);
+        while((uint8_t)TMR0 != tmpTMR0);
     }
     
     // Stop bit
     MODBUS_TX_PIN = 1;
     tmpTMR0 += BIT_TIME;
-    while(TMR0 < tmpTMR0);
+    while((uint8_t)TMR0 != tmpTMR0);
 }
 
 static bool ModbusUART_ReceiveByte(uint8_t *data) {
     uint8_t tmpData = 0;
-    uint16_t tmpTMR0;
+    uint8_t tmpTMR0;
     
     // Wait for start bit
     if(MODBUS_RX_PIN == 1) return false;
     
-    tmpTMR0 = TMR0 + HALF_BIT_TIME; // Move to middle of start bit
-    while(TMR0 < tmpTMR0);
+    tmpTMR0 = (uint8_t)TMR0 + HALF_BIT_TIME; // Move to middle of start bit
+    while((uint8_t)TMR0 != tmpTMR0);
     
     if(MODBUS_RX_PIN == 1) return false; // Verify start bit
     
@@ -88,14 +88,14 @@ static bool ModbusUART_ReceiveByte(uint8_t *data) {
     
     // Read 8 data bits
     for(uint8_t i = 0; i < 8; i++) {
-        while(TMR0 < tmpTMR0);
+        while((uint8_t)TMR0 != tmpTMR0);
         tmpData >>= 1;
         if(MODBUS_RX_PIN) tmpData |= 0x80;
         tmpTMR0 += BIT_TIME;
     }
     
     // Wait for stop bit
-    while(TMR0 < tmpTMR0);
+    while((uint8_t)TMR0 != tmpTMR0);
     if(MODBUS_RX_PIN == 0) return false; // Invalid stop bit
     
     *data = tmpData;
