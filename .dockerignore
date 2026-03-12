@@ -1,0 +1,7 @@
+# Keep the Docker build context small
+Images/
+MobicoolFR34.X/dist/
+*.md
+*.JPG
+*.PNG
+.git/
