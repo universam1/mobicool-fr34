@@ -96,13 +96,15 @@ The `esp32-companion/` directory contains a self-contained [PlatformIO](https://
 ### Wiring
 
 See [`esp32-companion/WIRING.md`](esp32-companion/WIRING.md) for the full wiring table and ASCII diagram.  
-**TL;DR** — three wires, no level-shifter needed (both sides are 3.3 V):
+**TL;DR** — three wires soldered directly to the PIC, no level-shifter needed (both sides are 3.3 V):
 
-| Cooler J4 | Signal | ESP32 GPIO |
-|:---------:|--------|:----------:|
-| pin 2     | PIC TX (RA5) | GPIO 16 (RX2) |
-| pin 3     | PIC RX (RC7) | GPIO 17 (TX2) |
-| pin 4     | GND          | GND           |
+| Cooler PCB point | Signal | ESP32 GPIO |
+|:----------------:|--------|:----------:|
+| PIC pin 2 (RA5)  | Modbus TX | GPIO 16 (RX2) |
+| PIC pin 9 (RC7)  | Modbus RX | GPIO 17 (TX2) |
+| GND pad          | GND       | GND           |
+
+> **Note:** J4 on the mainboard is the PIC↔IRMCF183 motor-controller link — do not use it. The Modbus pins have no dedicated header; solder to PIC pin 2 (RA5) and pin 9 (RC7) directly.
 
 ### Building & flashing the ESP32
 

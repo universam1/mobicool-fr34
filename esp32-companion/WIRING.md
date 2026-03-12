@@ -7,44 +7,46 @@ No level-shifter or resistor divider is required on the UART lines.
 
 ---
 
-## Connector on the cooler mainboard
+## Solder points on the cooler mainboard
 
-On many FR34 variants the Modbus/UART test-pad header is labelled **J4** and
-sits near the edge of the PCB.  It is a 4-pin 2.54 mm (0.1 in) pitch header.
+The Modbus software UART uses **RA5** (PIC pin 2, TX) and **RC7** (PIC pin 9,
+RX).  These do **not** break out to any named header on the stock PCB.
 
-| J4 pin | Signal label | Direction (PIC) |
-|--------|-------------|-----------------|
-| 1      | VCC 3.3 V   | — (do **not** power the ESP32 from here; current limit unknown) |
-| 2      | TX (RA5)    | PIC transmits → |
-| 3      | RX (RC7)    | PIC receives ←  |
-| 4      | GND         | —               |
+> **Important:** J4 on the mainboard is the dedicated UART link between the
+> PIC and the **IRMCF183 motor controller** — do not use it for Modbus.
 
-> **Note:** Pin 1 numbering may differ on board revisions.  Verify with a
-> multimeter before connecting.  Use a **separate 3.3 V or 5 V supply** (ESP32
-> devkit USB or a dedicated regulator) to power the ESP32.
+| PIC pin | Name | Note |
+|:-------:|------|------|
+| 2       | RA5  | Modbus TX (PIC transmits).  A ~1 kΩ series resistor sits between this pin and the TM1620B DIO pad — soldering to either side of that resistor is fine; the 1 kΩ acts as a useful series terminator. |
+| 9       | RC7  | Modbus RX (PIC receives).  This trace is unconnected on the stock board; solder directly to the PIC pin or its via. |
+| any GND | GND  | Several GND vias are available near the board edge. |
+
+Use a **separate 3.3 V or 5 V supply** (ESP32 devkit USB or a dedicated
+regulator) to power the ESP32.  Do not attempt to draw power from the
+cooler mainboard.
 
 ---
 
 ## Connection table
 
-| Cooler J4 pin | Signal  | ESP32 DevKit GPIO | ESP32 function |
-|:---:|---------|:-----------------:|----------------|
-| 2   | TX (RA5) | **GPIO 16**      | UART2 RX       |
-| 3   | RX (RC7) | **GPIO 17**      | UART2 TX       |
-| 4   | GND      | **GND**          | Common ground  |
+| Cooler PCB point | Signal   | ESP32 DevKit GPIO | ESP32 function |
+|-----------------|----------|:-----------------:|----------------|
+| PIC pin 2 (RA5) | Modbus TX | **GPIO 16**      | UART2 RX       |
+| PIC pin 9 (RC7) | Modbus RX | **GPIO 17**      | UART2 TX       |
+| GND pad         | GND       | **GND**          | Common ground  |
 
-**Do not connect VCC** — the ESP32 must be powered independently.
+**Do not connect VCC** — power the ESP32 independently via USB or a regulator.
 
 ---
 
 ## Wiring diagram (ASCII)
 
 ```
- Cooler mainboard J4          ESP32 DevKit
+ Cooler PCB                   ESP32 DevKit
  ┌───────────────────┐        ┌──────────────────┐
- │ pin2  RA5  TX ────┼────────┼─ GPIO16 (RX2)    │
- │ pin3  RC7  RX ────┼────────┼─ GPIO17 (TX2)    │
- │ pin4  GND  ───────┼────────┼─ GND             │
+ │ PIC pin2  RA5  TX─┼────────┼─ GPIO16 (RX2)    │
+ │ PIC pin9  RC7  RX─┼────────┼─ GPIO17 (TX2)    │
+ │ GND ──────────────┼────────┼─ GND             │
  └───────────────────┘        │                  │
                               │  USB (power)     │
                               └──────────────────┘
