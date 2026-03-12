@@ -6,6 +6,7 @@ mainboard, then exposes two selectable transport modes:
 
 | Transport | How to access |
 |-----------|---------------|
+| **WiFi AP + BLE** (`fr34-dual`, default) | Both interfaces active simultaneously |
 | **WiFi AP** (`fr34-wifi`) | Connect to the `FR34-Cooler` open WiFi network, open `http://192.168.4.1/` in any browser |
 | **BLE GATT** (`fr34-ble`) | Open the [Web Bluetooth PWA](#ble--web-bluetooth-pwa) in Chrome on Android |
 
@@ -41,24 +42,27 @@ the cooler mainboard.
 [PlatformIO](https://platformio.org/) is required.
 
 ```sh
-# WiFi + WebSocket dashboard (default)
+# WiFi + BLE simultaneously (default)
+pio run -e fr34-dual -t upload
+
+# WiFi + WebSocket dashboard only
 pio run -e fr34-wifi -t upload
 
-# BLE GATT server (for the Web Bluetooth PWA)
+# BLE GATT server only
 pio run -e fr34-ble -t upload
 
 # Serial monitor
 pio device monitor
 ```
 
-The `default_envs` in `platformio.ini` is `fr34-wifi`, so a plain `pio run`
-builds the WiFi variant.
+The `default_envs` in `platformio.ini` is `fr34-dual`, so a plain `pio run`
+builds both transports. Use the single-transport targets to save flash space
+(the dual build uses ~96% of the default 1.25 MB partition).
 
 ### Dependencies (managed automatically by PlatformIO)
 
 | Environment | Libraries |
-|-------------|-----------|
-| `fr34-wifi` | `esphome/AsyncTCP-esphome`, `esphome/ESPAsyncWebServer-esphome`, `bblanchon/ArduinoJson` |
+|-------------|-----------|| `fr34-dual` | `esphome/AsyncTCP-esphome`, `esphome/ESPAsyncWebServer-esphome`, `bblanchon/ArduinoJson`, `h2zero/NimBLE-Arduino` || `fr34-wifi` | `esphome/AsyncTCP-esphome`, `esphome/ESPAsyncWebServer-esphome`, `bblanchon/ArduinoJson` |
 | `fr34-ble`  | `h2zero/NimBLE-Arduino` |
 
 ---

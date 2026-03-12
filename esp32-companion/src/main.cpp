@@ -238,7 +238,9 @@ static void bleSetup() {
 void setup() {
     Serial.begin(115200);
     Serial.println("\n[FR34] Booting...");
-#ifdef TRANSPORT_WIFI
+#if defined(TRANSPORT_WIFI) && defined(TRANSPORT_BLE)
+    Serial.println("[FR34] Transport: WiFi AP + WebSocket + BLE GATT");
+#elif defined(TRANSPORT_WIFI)
     Serial.println("[FR34] Transport: WiFi AP + WebSocket");
 #else
     Serial.println("[FR34] Transport: BLE GATT");
