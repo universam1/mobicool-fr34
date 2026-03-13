@@ -61,8 +61,17 @@ The physical buttons on the cooler operate as follows:
 ### SET Button
 * **Short Press:** Enters the **Settings Menu** and cycles through configuration options:
   1. **Target Temperature:** Use `PLUS (+)` and `MINUS (-)` to adjust the target setpoint (down to -18°C).
-  2. **Battery Monitor Level:** Use `+` or `-` to select `HI`, `MEd`, or `Lo` for battery voltage cut-off thresholds.
+  2. **Power Mode:** Use `+` or `-` to select `ECo`, `Std`, or `Hi` compressor behavior.
+  3. **Battery Monitor Level:** Use `+` or `-` to select `HI`, `MEd`, or `Lo` for battery voltage cut-off thresholds.
 * The menu times out automatically after a few seconds of inactivity, permanently saving your changes to EEPROM.
+
+### Power Modes
+
+The cooler offers three compressor control strategies:
+
+* **Eco:** Limits the top compressor speed and uses a 2.0 °C restart hysteresis. Once the compressor stops, the cabinet is allowed to warm up about 2 °C above the setpoint before it starts again, reducing cycling frequency.
+* **Std:** Uses the normal automatic speed control with a 1.0 °C restart hysteresis.
+* **Hi:** Prioritizes pull-down and hold performance. After reaching the target temperature, the compressor stays on at minimum speed instead of shutting off immediately, and only turns off after cooling about 2.0 °C below the setpoint.
 
 ## Building
 

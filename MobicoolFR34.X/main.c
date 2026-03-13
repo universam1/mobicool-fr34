@@ -88,6 +88,8 @@ static void system_init(display_context_t* display);
 static void update_temperature(temp_context_t* temp);
 static bool update_battery(battery_context_t* battery, display_context_t* display, compressor_context_t* comp);
 static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_context_t* temp);
+static int16_t get_restart_threshold10(const compressor_context_t* comp);
+static int16_t get_shutdown_threshold10(const compressor_context_t* comp);
 static void update_compressor_state(compressor_context_t* comp, temp_context_t* temp, bool check_enabled);
 static void handle_key_press(uint8_t keys, uint8_t* lastkeys, uint8_t* longpress, display_context_t* display, compressor_context_t* comp);
 static void update_settings(display_context_t* display, int16_t* temp_setpoint10);
@@ -244,12 +246,28 @@ static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_conte
     return speedidx;
 }
 
+static int16_t get_restart_threshold10(const compressor_context_t* comp) {
+    if (comp->pmode == PMODE_ECO) {
+        return TEMP_HYSTERESIS_ECO;
+    }
+
+    return TEMP_HYSTERESIS_DEFAULT;
+}
+
+static int16_t get_shutdown_threshold10(const compressor_context_t* comp) {
+    if (comp->pmode == PMODE_HI) {
+        return -TEMP_OVERSHOOT_HI;
+    }
+
+    return 0;
+}
+
 static void handle_compressor_lockout(compressor_context_t* comp) {
     Compressor_OnOff(false, comp->fanspin > 0, 0);
 }
 
 static void handle_compressor_off(compressor_context_t* comp, temp_context_t* temp) {
-    if (temp->temperature10 - temp->temp_setpoint10 >= 1 && comp->timer == 0) {
+    if (temp->temperature10 - temp->temp_setpoint10 >= get_restart_threshold10(comp) && comp->timer == 0) {
         comp->timer = COMP_START_DELAY;
         comp->fanspin = COMP_START_DELAY;
     }
@@ -270,8 +288,17 @@ static void handle_compressor_starting(compressor_context_t* comp, temp_context_
 static void handle_compressor_running(compressor_context_t* comp, temp_context_t* temp) {
     comp->speed = calculate_compressor_speed(comp, temp);
     int16_t tempdiff = temp->temperature10 - temp->temp_setpoint10;
+    uint8_t min_speed = Compressor_GetMinSpeedIdx();
     
-    if (tempdiff <= 0) {
+    if (comp->pmode == PMODE_HI && tempdiff <= 0 && tempdiff > get_shutdown_threshold10(comp)) {
+        if (comp->speed > min_speed) {
+            comp->speed = min_speed;
+        }
+        Compressor_OnOff(true, true, comp->speed);
+        return;
+    }
+
+    if (tempdiff <= get_shutdown_threshold10(comp)) {
         comp->state = COMP_LOCKOUT;
         comp->timer = COMP_LOCKOUT_TIME;
         comp->fanspin = FAN_SPINDOWN_TIME;
