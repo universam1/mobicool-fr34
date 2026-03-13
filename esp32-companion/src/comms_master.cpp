@@ -1,17 +1,23 @@
 #include "comms_master.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-// Critical-section mutex protecting per-byte bit-bang timing from FreeRTOS
-// task preemption.  1 byte ≈ 1 ms critical section — acceptable for WiFi.
-static portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
+#include "driver/gpio.h"
 
 // ── Initialise ────────────────────────────────────────────────────────────
 void CommsMaster::begin(int pin, uint32_t baud) {
-    _pin   = pin;
-    _bitUs = 1000000UL / baud;  // µs per bit (104 for 9600 baud)
-    pinMode(_pin, INPUT_PULLUP);
-    delay(5); // settle line
+    _pin = pin;
+
+    // Route both Hardware RX and TX to the same pin. 
+    // The ESP32 HardwareSerial driver detects (rxPin == txPin) and 
+    // automatically enables half-duplex single-wire mode (open-drain).
+    Serial2.begin(baud, SERIAL_8N1, pin, pin);
+
+    // Explicitly enable the internal pullup (~45kΩ) on this pin using ESP-IDF.
+    // We use gpio_pullup_en() instead of pinMode() because pinMode() would 
+    // inadvertently disconnect the hardware UART from the pin matrix.
+    gpio_pullup_en((gpio_num_t)pin);
+
+    // Flush any power-on noise from the wire
+    delay(5);
+    while (Serial2.available()) Serial2.read();
 }
 
 // ── CRC8: XOR of all bytes (must match PIC comms.c) ──────────────────────
@@ -19,77 +25,6 @@ uint8_t CommsMaster::crc8(const uint8_t* buf, uint8_t len) {
     uint8_t crc = 0;
     while (len--) crc ^= *buf++;
     return crc;
-}
-
-// ── Open-drain TX ─────────────────────────────────────────────────────────
-// Logic 0: drive LOW (OUTPUT + LOW).  Logic 1: release (INPUT_PULLUP).
-// After the stop bit the pin is left in INPUT_PULLUP = receive mode.
-void CommsMaster::txByte(uint8_t data) {
-    portENTER_CRITICAL(&_mux);
-
-    // Start bit (low)
-    pinMode(_pin, OUTPUT);
-    digitalWrite(_pin, LOW);
-    delayMicroseconds(_bitUs);
-
-    // 8 data bits, LSB first
-    for (int i = 0; i < 8; i++) {
-        if (data & 0x01) {
-            pinMode(_pin, INPUT_PULLUP);       // release → high
-        } else {
-            pinMode(_pin, OUTPUT);
-            digitalWrite(_pin, LOW);           // pull low
-        }
-        data >>= 1;
-        delayMicroseconds(_bitUs);
-    }
-
-    // Stop bit: release → high
-    pinMode(_pin, INPUT_PULLUP);
-    delayMicroseconds(_bitUs);
-
-    portEXIT_CRITICAL(&_mux);
-}
-
-// ── Open-drain RX ─────────────────────────────────────────────────────────
-// Polls for start bit outside the critical section (may wait up to timeoutUs),
-// then reads bits inside a critical section for precise timing.
-bool CommsMaster::rxByte(uint8_t* data, uint32_t timeoutUs) {
-    pinMode(_pin, INPUT_PULLUP);
-
-    // Wait for falling edge (start bit) with timeout
-    uint32_t deadline = micros() + timeoutUs;
-    while (digitalRead(_pin) != LOW) {
-        if ((int32_t)(micros() - deadline) >= 0) return false;
-    }
-
-    // Per-bit section: protect from task preemption
-    portENTER_CRITICAL(&_mux);
-
-    // Sample at centre of start bit
-    delayMicroseconds(_bitUs / 2);
-    if (digitalRead(_pin) != LOW) {
-        portEXIT_CRITICAL(&_mux);
-        return false; // glitch — not a real start bit
-    }
-
-    // Read 8 data bits, LSB first
-    uint8_t d = 0;
-    for (int i = 0; i < 8; i++) {
-        delayMicroseconds(_bitUs);
-        d >>= 1;
-        if (digitalRead(_pin)) d |= 0x80;
-    }
-
-    // Verify stop bit
-    delayMicroseconds(_bitUs);
-    bool stopOk = (digitalRead(_pin) == HIGH);
-
-    portEXIT_CRITICAL(&_mux);
-
-    if (!stopOk) return false;
-    *data = d;
-    return true;
 }
 
 // ── Full request/response transaction ────────────────────────────────────
@@ -101,42 +36,69 @@ bool CommsMaster::transact(uint8_t cmd,
 {
     if (_pin < 0) return false;
 
-    // Build and send request
-    uint8_t frame[8]; // SYNC + CMD + LEN + up to 4 payload bytes + CRC
+    // 1. Flush any stale bytes that may have arrived unexpectedly
+    while (Serial2.available()) Serial2.read();
+
+    // 2. Build the request frame
+    uint8_t reqLen = 4 + txLen;
+    uint8_t frame[16];
     frame[0] = COMMS_SYNC;
     frame[1] = cmd;
     frame[2] = txLen;
     for (uint8_t i = 0; i < txLen; i++) frame[3 + i] = txPayload[i];
     frame[3 + txLen] = crc8(frame, 3 + txLen);
 
-    for (uint8_t i = 0; i <= 3 + txLen; i++) txByte(frame[i]);
+    // 3. Transmit (zero CPU blocking thanks to hardware UART)
+    Serial2.write(frame, reqLen);
+    Serial2.flush(); // Block until the transmission is fully physically complete
 
-    // Turnaround: pin is already INPUT_PULLUP after last stop bit.
-    // PIC waits 4 × 104 µs = 416 µs before transmitting response.
-    // We wait 300 µs then start polling — gives ~116 µs margin.
-    delayMicroseconds(300);
-
-    // Receive response: [LEN] [PAYLOAD...] [CRC8]
-    uint8_t resp_len;
-    if (!rxByte(&resp_len, 2000)) return false;
-    if (resp_len != expectedRxLen) return false;
-
-    uint8_t resp_payload[10]; // large enough for GET (10 bytes)
-    for (uint8_t i = 0; i < resp_len; i++) {
-        if (!rxByte(&resp_payload[i], 500)) return false;
+    // 4. Discard the hardware loopback.
+    // Because RX and TX share the same pin, our own transmission is echoed back.
+    uint8_t discarded = 0;
+    uint32_t start = millis();
+    while (discarded < reqLen) {
+        if (Serial2.available()) {
+            Serial2.read();
+            discarded++;
+        }
+        if (millis() - start > 100) return false; // Timeout reading our own echo
     }
 
-    uint8_t resp_crc;
-    if (!rxByte(&resp_crc, 500)) return false;
+    // 5. Receive the PIC's response length (with a slightly longer 200ms turnaround timeout)
+    start = millis();
+    while (!Serial2.available()) {
+        if (millis() - start > 200) return false; 
+    }
+    uint8_t respLen = Serial2.read();
+    
+    if (respLen != expectedRxLen) return false;
 
-    // Validate CRC: XOR of [LEN] + [PAYLOAD...]
+    // 6. Receive the response payload
+    uint8_t respPayload[10]; // large enough for GET_TELEMETRY (10 bytes)
+    for (uint8_t i = 0; i < respLen; i++) {
+        start = millis();
+        while (!Serial2.available()) {
+            if (millis() - start > 50) return false;
+        }
+        respPayload[i] = Serial2.read();
+    }
+
+    // 7. Receive response CRC
+    start = millis();
+    while (!Serial2.available()) {
+        if (millis() - start > 50) return false;
+    }
+    uint8_t rxCrc = Serial2.read();
+
+    // 8. Validate CRC: XOR of [LEN] + [PAYLOAD...]
     uint8_t crc_buf[11];
-    crc_buf[0] = resp_len;
-    for (uint8_t i = 0; i < resp_len; i++) crc_buf[1 + i] = resp_payload[i];
-    if (crc8(crc_buf, 1 + resp_len) != resp_crc) return false;
+    crc_buf[0] = respLen;
+    for (uint8_t i = 0; i < respLen; i++) crc_buf[1 + i] = respPayload[i];
+    if (crc8(crc_buf, 1 + respLen) != rxCrc) return false;
 
+    // 9. Deliver payload to caller
     if (rxPayload) {
-        for (uint8_t i = 0; i < resp_len; i++) rxPayload[i] = resp_payload[i];
+        for (uint8_t i = 0; i < respLen; i++) rxPayload[i] = respPayload[i];
     }
     return true;
 }
