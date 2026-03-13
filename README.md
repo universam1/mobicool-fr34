@@ -139,12 +139,11 @@ See [`esp32-companion/WIRING.md`](esp32-companion/WIRING.md) for the full wiring
 **Prerequisites:** [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/index.html) or the PlatformIO IDE extension for VS Code.
 
 ```bash
-cd esp32-companion
-pio run --target upload       # build + flash
-pio device monitor            # optional: serial output at 115200 baud
+pio run -e fr34-dual --target upload
+pio device monitor -e fr34-dual
 ```
 
-PlatformIO will automatically fetch all library dependencies on first build.
+PlatformIO will automatically fetch all library dependencies on first build. The repository root now contains the `platformio.ini`, while the ESP32 sources remain under `esp32-companion/src/`.
 
 ### Using the dashboard
 
@@ -159,12 +158,17 @@ PlatformIO will automatically fetch all library dependencies on first build.
 
 ```
 esp32-companion/
-├── platformio.ini          # PlatformIO project configuration
 └── src/
     ├── main.cpp            # WiFi AP, HTTP server, WebSocket, poll loop
     ├── comms_master.h      # CoolerState struct + CommsMaster declaration
     ├── comms_master.cpp    # Single-wire communication implementation
     └── web_ui.h            # Vue 3 SPA embedded as C string literal
+```
+
+Root files:
+
+```
+platformio.ini              # Root-level PlatformIO project configuration for the ESP32 companion
 ```
 
 ---

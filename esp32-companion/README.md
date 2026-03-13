@@ -52,12 +52,13 @@ pio run -e fr34-wifi -t upload
 pio run -e fr34-ble -t upload
 
 # Serial monitor
-pio device monitor
+pio device monitor -e fr34-dual
 ```
 
 The `default_envs` in `platformio.ini` is `fr34-dual`, so a plain `pio run`
 builds both transports. Use the single-transport targets to save flash space
-(the dual build uses ~96% of the default 1.25 MB partition).
+(the dual build uses ~96% of the default 1.25 MB partition). Run these commands
+from the repository root, where `platformio.ini` now lives.
 
 ### Dependencies (managed automatically by PlatformIO)
 
