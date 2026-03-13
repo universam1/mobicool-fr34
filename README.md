@@ -90,21 +90,20 @@ The `esp32-companion/` directory contains a self-contained [PlatformIO](https://
 | WiFi AP | SSID `FR34-Cooler`, open network, IP `192.168.4.1` |
 | Web UI  | Vue 3 SPA with live metrics, setpoint ±0.5 °C buttons, compressor override & power-cap sliders |
 | Protocol | WebSocket for real-time push updates (1 s interval) |
-| Modbus  | RTU master, 9 600 baud, polls all 6 cooler registers |
+| Comms   | Single-wire half-duplex, 9600 baud, open-drain on RC7 (PIC pin 9) only — **RA5 not needed** |
 | REST API | `GET /api/state` returns current state as JSON |
 
 ### Wiring
 
 See [`esp32-companion/WIRING.md`](esp32-companion/WIRING.md) for the full wiring table and ASCII diagram.  
-**TL;DR** — three wires soldered directly to the PIC, no level-shifter needed (both sides are 3.3 V):
+**TL;DR** — **two wires only** (one data + GND), soldered to PIC pin 9, no level-shifter, no external resistor:
 
 | Cooler PCB point | Signal | ESP32 GPIO |
 |:----------------:|--------|:----------:|
-| PIC pin 2 (RA5)  | Modbus TX | GPIO 16 (RX2) |
-| PIC pin 9 (RC7)  | Modbus RX | GPIO 17 (TX2) |
-| GND pad          | GND       | GND           |
+| PIC pin 9 (RC7)  | Data (open-drain) | GPIO 16 (`INPUT_PULLUP`) |
+| GND pad          | GND               | GND |
 
-> **Note:** J4 on the mainboard is the PIC↔IRMCF183 motor-controller link — do not use it. The Modbus pins have no dedicated header; solder to PIC pin 2 (RA5) and pin 9 (RC7) directly.
+> **Note:** J4 on the mainboard is the PIC↔IRMCF183 motor-controller link — do not use it. RA5 (PIC pin 2) is not used by the ESP32 companion. Solder a single wire to PIC pin 9 (RC7) directly. The ESP32 internal pullup (~45 kΩ) is sufficient for wire lengths up to ~30 cm; add an external 4.7 kΩ pullup to 3.3 V for longer runs.
 
 ### Building & flashing the ESP32
 

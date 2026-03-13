@@ -16,7 +16,7 @@ build: .build-pre .build-post
 	mcc_generated_files/adc.c mcc_generated_files/device_config.c \
 	mcc_generated_files/eusart.c mcc_generated_files/mcc.c \
 	mcc_generated_files/memory.c mcc_generated_files/pin_manager.c \
-	mcc_generated_files/tmr1.c modbus.c
+	mcc_generated_files/tmr1.c comms.c
 
 .build-post:
 

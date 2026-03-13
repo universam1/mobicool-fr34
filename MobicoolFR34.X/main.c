@@ -19,7 +19,7 @@
 #include "mcc_generated_files/mcc.h"
 #include "analog.h"
 #include "irmcf183.h"
-#include "modbus.h"
+#include "comms.h"
 #include "settings.h"
 #include "display.h"
 #include "tm1620b.h"
@@ -101,7 +101,7 @@ static void system_init(display_context_t* display) {
     __delay_ms(200);
     Display_Initialize();
     Compressor_Init();
-    Modbus_Initialize();
+    Comms_Initialize();
     __delay_ms(1800);
 
     // Initialize settings
@@ -192,8 +192,8 @@ static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_conte
     uint8_t max = Compressor_GetMaxSpeedIdx();
     uint8_t speedidx = comp->speed;
     
-    uint8_t modbus_power = Modbus_GetCompressorPower();
-    uint8_t max_power = Modbus_GetMaxPowerLimit();
+    uint8_t modbus_power = Comms_GetCompressorPower();
+    uint8_t max_power = Comms_GetMaxPowerLimit();
     
     if (modbus_power > 0 && max_power > 0) {
         // Scale speed based on max power limit
@@ -332,7 +332,7 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
         Settings_SaveOnOff(display->on);
     }
     
-    int16_t modbus_temp = Modbus_GetTargetTemperature() / 10;
+    int16_t modbus_temp = Comms_GetTargetTemperature() / 10;
     if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
         display->newtemp = (int8_t)modbus_temp;
     }
@@ -342,7 +342,7 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
         display->temp_setpoint10 = display->newtemp * 10;
         *temp_setpoint10 = display->temp_setpoint10;
         Settings_SaveTemp(display->temp_setpoint);
-        Modbus_SetTargetTemperature(display->temp_setpoint10);
+        Comms_SetTargetTemperature(display->temp_setpoint10);
     }
     
     if (display->newfahrenheit != display->fahrenheit) {
@@ -389,7 +389,7 @@ void main(void) {
             Display_TimerTick(&display);
         }
 
-        Modbus_Process();
+        Comms_Process();
         AnalogUpdate();
         
         update_temperature(&temp);

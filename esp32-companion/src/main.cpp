@@ -1,25 +1,23 @@
 /**
  * ESP32 companion for Mobicool FR34 cooler
  *
- * Modbus RTU over the 3-wire UART interface on the PIC16F1829 mainboard.
- * Two transport modes are supported — build with the matching environment:
- *
- *   pio run -e fr34-wifi  →  WiFi AP + WebSocket (http://192.168.4.1/)
- *   pio run -e fr34-ble   →  BLE GATT server (pair with Web Bluetooth PWA)
+ * Single-wire half-duplex protocol over RC7 (PIC pin 9).
+ * ESP32 GPIO16 is the single open-drain data line; no level-shifter needed
+ * (both sides 3.3 V). The ESP32 INPUT_PULLUP (~45 kΩ) is sufficient for
+ * wire lengths up to ~30 cm at 9600 baud; add an external 4.7 kΩ for longer.
  *
  * Hardware connections
  * ─────────────────────────────────────────────────────────────────────
  *  PIC pin   Signal      ESP32 GPIO
- *  RA5       MODBUS TX   16  (UART2 RX)
- *  RC7       MODBUS RX   17  (UART2 TX)
+ *  RC7  (9)  DATA        16  (open-drain, INPUT_PULLUP)
  *  GND       GND         GND
  *
- * Both devices operate at 3.3 V; no level-shifter required.
- * See WIRING.md for connector details.
+ * No RA5 connection required.
+ * See WIRING.md for soldering details.
  */
 
 #include <Arduino.h>
-#include "modbus_master.h"
+#include "comms_master.h"
 
 #if !defined(TRANSPORT_WIFI) && !defined(TRANSPORT_BLE)
 #  error "Define either TRANSPORT_WIFI or TRANSPORT_BLE via build flags"
@@ -42,13 +40,12 @@
 
 // ── Common configuration ───────────────────────────────────────────────────
 static constexpr char     DEVICE_NAME[] = "FR34-Cooler";
-static constexpr int      MB_RX_PIN     = 16;
-static constexpr int      MB_TX_PIN     = 17;
-static constexpr uint32_t MB_BAUD       = 9600;
+static constexpr int      COMMS_DATA_PIN = 16;   // open-drain single wire → PIC RC7
+static constexpr uint32_t COMMS_BAUD     = 9600;
 static constexpr uint32_t POLL_MS       = 1000;
 
 // ── Common globals ─────────────────────────────────────────────────────────
-ModbusMaster modbus;
+CommsMaster comms;
 CoolerState  coolerState;
 static uint32_t lastPoll = 0;
 
@@ -73,7 +70,7 @@ static String buildJson(const CoolerState& s) {
         doc["compPower"]    = s.compPower;
         doc["compPowerMax"] = s.compPowerMax;
     } else {
-        doc["error"] = "modbus_fail";
+        doc["error"] = "comms_fail";
     }
     String out;
     serializeJson(doc, out);
@@ -95,11 +92,11 @@ static void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient*,
     const char* cmd = doc["cmd"] | "";
     int16_t     val = doc["value"] | 0;
 
-    if      (strcmp(cmd, "setTemp")     == 0) modbus.writeRegister(MB_REG_TARGET_TEMP,   (uint16_t)val);
-    else if (strcmp(cmd, "setPower")    == 0) modbus.writeRegister(MB_REG_COMP_POWER,    (uint16_t)constrain(val, 0, 100));
-    else if (strcmp(cmd, "setPowerMax") == 0) modbus.writeRegister(MB_REG_COMP_POWER_MAX,(uint16_t)constrain(val, 0, 100));
+    if      (strcmp(cmd, "setTemp")     == 0) comms.setTargetTemp((int16_t)val);
+    else if (strcmp(cmd, "setPower")    == 0) comms.setCompPower((uint8_t)constrain(val, 0, 100));
+    else if (strcmp(cmd, "setPowerMax") == 0) comms.setCompPowerMax((uint8_t)constrain(val, 0, 100));
 
-    if (modbus.readAll(coolerState)) ws.textAll(buildJson(coolerState));
+    if (comms.readAll(coolerState)) ws.textAll(buildJson(coolerState));
 }
 
 static void wifiSetup() {
@@ -178,13 +175,13 @@ class BleCmdCallback : public NimBLECharacteristicCallbacks {
         auto val = pChar->getValue();
         if (pChar == bleCmdTempChar && val.size() >= 2) {
             int16_t v; memcpy(&v, val.data(), 2);
-            modbus.writeRegister(MB_REG_TARGET_TEMP, (uint16_t)v);
+            comms.setTargetTemp(v);
         } else if (pChar == bleCmdPwrChar && val.size() >= 1) {
-            modbus.writeRegister(MB_REG_COMP_POWER, (uint16_t)constrain((int)val[0], 0, 100));
+            comms.setCompPower((uint8_t)constrain((int)val[0], 0, 100));
         } else if (pChar == bleCmdPMaxChar && val.size() >= 1) {
-            modbus.writeRegister(MB_REG_COMP_POWER_MAX, (uint16_t)constrain((int)val[0], 0, 100));
+            comms.setCompPowerMax((uint8_t)constrain((int)val[0], 0, 100));
         }
-        if (modbus.readAll(coolerState)) blePackAndNotify(coolerState);
+        if (comms.readAll(coolerState)) blePackAndNotify(coolerState);
     }
 };
 static BleCmdCallback bleCmdCb;
@@ -246,8 +243,8 @@ void setup() {
     Serial.println("[FR34] Transport: BLE GATT");
 #endif
 
-    modbus.begin(Serial2, MB_RX_PIN, MB_TX_PIN, MB_BAUD);
-    Serial.println("[FR34] Modbus UART initialised (GPIO16 RX, GPIO17 TX, 9600 baud)");
+    comms.begin(COMMS_DATA_PIN, COMMS_BAUD);
+    Serial.println("[FR34] Comms initialised (GPIO16 open-drain, 9600 baud)");
 
 #ifdef TRANSPORT_WIFI
     wifiSetup();
@@ -265,7 +262,7 @@ void loop() {
     uint32_t now = millis();
     if (now - lastPoll >= POLL_MS) {
         lastPoll = now;
-        if (modbus.readAll(coolerState)) {
+        if (comms.readAll(coolerState)) {
 #ifdef TRANSPORT_WIFI
             wifiNotify(coolerState);
 #endif
@@ -273,7 +270,7 @@ void loop() {
             blePackAndNotify(coolerState);
 #endif
         } else {
-            Serial.println("[FR34] Modbus read failed");
+            Serial.println("[FR34] Comms read failed");
             coolerState.valid = false;
 #ifdef TRANSPORT_WIFI
             wifiNotify(coolerState);  // broadcast error flag to WebSocket clients

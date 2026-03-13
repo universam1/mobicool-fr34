@@ -1,41 +1,63 @@
 # Wiring — PIC16F1829 Mainboard ↔ ESP32
 
-## Voltage compatibility
+## Overview
 
-Both the cooler mainboard and the ESP32 devkit operate at **3.3 V logic**.
-No level-shifter or resistor divider is required on the UART lines.
+The ESP32 companion communicates over a **single wire** using an open-drain
+half-duplex protocol (similar to Dallas 1-Wire but at standard UART framing).
+Only **two connections** are needed: one data wire to PIC pin 9 (RC7) and a
+shared GND.  RA5 (PIC pin 2) is **not** used.
 
 ---
 
-## Solder points on the cooler mainboard
+## Voltage compatibility
 
-The Modbus software UART uses **RA5** (PIC pin 2, TX) and **RC7** (PIC pin 9,
-RX).  These do **not** break out to any named header on the stock PCB.
+Both the cooler mainboard and the ESP32 devkit operate at **3.3 V logic**.
+No level-shifter required.
 
-> **Important:** J4 on the mainboard is the dedicated UART link between the
-> PIC and the **IRMCF183 motor controller** — do not use it for Modbus.
+---
+
+## Open-drain bus explained
+
+```
+3.3 V (from ESP32 VDD via INPUT_PULLUP ~45 kΩ)
+  │
+  ├──── GPIO 16  (ESP32)    INPUT_PULLUP idle / OUTPUT+LOW to transmit 0
+  │
+  └──── RC7 / PIC pin 9     TRISC7=1 idle / TRISC7=0 to transmit 0
+
+       Both sides only ever PULL LOW.
+       The pullup is the only driver of the HIGH state.
+       Collision-free because protocol is strictly request/response.
+```
+
+The ESP32 internal pullup (~45 kΩ) gives a rise time of ~4.5 µs on a 10 cm
+wire — well within the 104 µs bit period at 9600 baud.
+
+---
+
+## Solder point on the cooler mainboard
+
+> **Important:** J4 is the dedicated UART link between the PIC and the
+> **IRMCF183 motor controller** — do not use it.
 
 | PIC pin | Name | Note |
 |:-------:|------|------|
-| 2       | RA5  | Modbus TX (PIC transmits).  A ~1 kΩ series resistor sits between this pin and the TM1620B DIO pad — soldering to either side of that resistor is fine; the 1 kΩ acts as a useful series terminator. |
-| 9       | RC7  | Modbus RX (PIC receives).  This trace is unconnected on the stock board; solder directly to the PIC pin or its via. |
+| 9       | RC7  | Data line.  Unconnected on the stock board; solder directly to the PIC pin or its via. |
 | any GND | GND  | Several GND vias are available near the board edge. |
 
-Use a **separate 3.3 V or 5 V supply** (ESP32 devkit USB or a dedicated
-regulator) to power the ESP32.  Do not attempt to draw power from the
-cooler mainboard.
+Use a **separate supply** (ESP32 devkit USB or a dedicated 3.3 V/5 V regulator)
+to power the ESP32.  Do not draw power from the cooler mainboard.
 
 ---
 
 ## Connection table
 
-| Cooler PCB point | Signal   | ESP32 DevKit GPIO | ESP32 function |
-|-----------------|----------|:-----------------:|----------------|
-| PIC pin 2 (RA5) | Modbus TX | **GPIO 16**      | UART2 RX       |
-| PIC pin 9 (RC7) | Modbus RX | **GPIO 17**      | UART2 TX       |
-| GND pad         | GND       | **GND**          | Common ground  |
+| Cooler PCB point | Signal           | ESP32 GPIO                     |
+|:----------------:|------------------|:------------------------------:|
+| PIC pin 9 (RC7)  | Data (open-drain) | **GPIO 16** (`INPUT_PULLUP`)  |
+| GND pad          | GND              | **GND**                        |
 
-**Do not connect VCC** — power the ESP32 independently via USB or a regulator.
+**Only 2 wires.**  Do not connect VCC.
 
 ---
 
@@ -44,8 +66,7 @@ cooler mainboard.
 ```
  Cooler PCB                   ESP32 DevKit
  ┌───────────────────┐        ┌──────────────────┐
- │ PIC pin2  RA5  TX─┼────────┼─ GPIO16 (RX2)    │
- │ PIC pin9  RC7  RX─┼────────┼─ GPIO17 (TX2)    │
+ │ PIC pin9  RC7    ─┼────────┼─ GPIO16           │
  │ GND ──────────────┼────────┼─ GND             │
  └───────────────────┘        │                  │
                               │  USB (power)     │
@@ -54,39 +75,51 @@ cooler mainboard.
 
 ---
 
-## Modbus parameters
+## Protocol parameters
 
-| Parameter     | Value          |
-|---------------|----------------|
-| Baud rate     | 9 600          |
-| Data bits     | 8              |
-| Parity        | None           |
-| Stop bits     | 1 (8N1)        |
-| Slave address | 0x01           |
+| Parameter  | Value               |
+|------------|---------------------|
+| Baud rate  | 9 600               |
+| Framing    | 8N1                 |
+| Topology   | Open-drain, 1 wire  |
+| Direction  | ESP32 initiates; PIC responds only |
+| Turnaround | ~416 µs after last request byte    |
 
 ---
 
-## Register map
+## Command / telemetry summary
 
-| Address | Name           | Type    | Unit       | Access     |
-|---------|----------------|---------|------------|------------|
-| 0x0000  | CURRENT_TEMP   | int16   | 0.1 °C     | Read-only  |
-| 0x0001  | TARGET_TEMP    | int16   | 0.1 °C     | Read/Write |
-| 0x0002  | VOLTAGE        | uint16  | mV         | Read-only  |
-| 0x0003  | FAN_CURRENT    | uint16  | mA         | Read-only  |
-| 0x0004  | COMP_POWER     | uint8   | 0–100 %    | Read/Write |
-| 0x0005  | COMP_POWER_MAX | uint8   | 0–100 %    | Read/Write |
+| Command        | ESP32 → PIC payload | PIC → ESP32 response   |
+|----------------|---------------------|------------------------|
+| GET_TELEMETRY  | — (0 bytes)         | 10 bytes (see below)   |
+| SET_SETPOINT   | int16 LE (tenths °C)| ACK (0x06) or NAK      |
+| SET_COMP_POWER | uint8 0–100 %       | ACK (0x06) or NAK      |
+| SET_POWER_CAP  | uint8 0–100 %       | ACK (0x06) or NAK      |
 
-`COMP_POWER = 0` → automatic temperature control  
-`COMP_POWER > 0` → forced duty cycle (overrides thermostat)  
-`COMP_POWER_MAX` → hard ceiling on compressor duty cycle regardless of other settings
+**GET_TELEMETRY response layout** (10 bytes, all little-endian):
+
+| Bytes | Field          | Type   | Unit    |
+|-------|----------------|--------|---------|
+| 0–1   | Current temp   | int16  | 0.1 °C  |
+| 2–3   | Setpoint       | int16  | 0.1 °C  |
+| 4–5   | Voltage        | uint16 | mV      |
+| 6–7   | Fan current    | uint16 | mA      |
+| 8     | Comp power     | uint8  | 0–100 % |
+| 9     | Comp power cap | uint8  | 0–100 % |
+
+`Comp power = 0` → automatic temperature control  
+`Comp power > 0` → forced duty cycle (overrides thermostat)  
+`Comp power cap` → hard ceiling regardless of other settings
 
 ---
 
 ## Notes
 
-* Keep the wires **as short as reasonably possible** (under ~30 cm is ideal)
-  to avoid picking up noise from the compressor motor drive circuitry.
-* If you experience communication errors, add a small series resistor
-  (100 Ω – 470 Ω) on each UART line and/or a 100 nF bypass capacitor
+* Keep the data wire **as short as possible** (under ~30 cm is ideal) to
+  avoid noise pickup from the compressor motor drive circuitry.
+* For wire lengths > 30 cm add an **external 4.7 kΩ pullup** from the data
+  line to 3.3 V close to the PIC pin.
+* A 100 nF bypass capacitor from the data line to GND near the ESP32 pin
+  can help if you see intermittent framing errors on long wires.
+* **Do not** add a series resistor on the data line — it would increase the
   from each line to GND close to the ESP32 pins.
