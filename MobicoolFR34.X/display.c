@@ -58,6 +58,7 @@ void Display_HandleKeyPress(display_context_t* ctx, uint8_t pressed_keys) {
             ctx->state = DISP_SET_BEGIN;
             ctx->newtemp = ctx->temp_setpoint;
             ctx->newbattmon = ctx->battmon;
+            ctx->newpmode = ctx->pmode;
         }
         ctx->state++;
         if (ctx->state == DISP_SET_END) {
@@ -68,6 +69,11 @@ void Display_HandleKeyPress(display_context_t* ctx, uint8_t pressed_keys) {
     // Handle setting adjustments
     if (pressed_keys & KEY_MINUS && ctx->state == DISP_SET_TEMP && ctx->newtemp > MIN_TEMP) ctx->newtemp--;
     if (pressed_keys & KEY_PLUS && ctx->state == DISP_SET_TEMP && ctx->newtemp < MAX_TEMP) ctx->newtemp++;
+    
+    if (ctx->state == DISP_SET_PMODE) {
+        if (pressed_keys & KEY_MINUS && ctx->newpmode > PMODE_ECO) ctx->newpmode--;
+        if (pressed_keys & KEY_PLUS && ctx->newpmode < PMODE_HI) ctx->newpmode++;
+    }
     
     if (ctx->state == DISP_SET_BATTMON) {
         if (pressed_keys & KEY_MINUS && ctx->newbattmon > BMON_DIS) ctx->newbattmon--;
@@ -144,6 +150,28 @@ void Display_Update(display_context_t* ctx, uint8_t pressed_keys) {
                 int8_t disptemp = ctx->newtemp;
                 uint8_t num = FormatDigits(NULL, disptemp, 0);
                 FormatDigits(&buf[4 - num], disptemp, 0); // Right justified
+            }
+            break;
+        }
+        case DISP_SET_PMODE: {
+            buf[0] = leds;
+            if (!(ctx->flashtimer & 0x08)) {
+                switch (ctx->newpmode) {
+                    case PMODE_ECO:
+                        buf[2] = c_E;
+                        buf[3] = c_C;
+                        buf[4] = c_o;
+                        break;
+                    case PMODE_NORMAL:
+                        buf[2] = c_S;
+                        buf[3] = c_t;
+                        buf[4] = c_d;
+                        break;
+                    case PMODE_HI:
+                        buf[3] = c_H;
+                        buf[4] = c_i;
+                        break;
+                }
             }
             break;
         }

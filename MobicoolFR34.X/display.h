@@ -11,6 +11,7 @@ typedef enum {
 
     DISP_SET_BEGIN,
     DISP_SET_TEMP,     // Set temperature set point
+    DISP_SET_PMODE,    // Set power mode (Eco/Norm/Hi)
     DISP_SET_BATTMON,  // Set battery monitor level
     DISP_SET_END,
 
@@ -26,6 +27,12 @@ typedef enum {
 
 extern uint8_t FormatDigits(uint8_t* buf, int16_t value, uint8_t decimals);
 
+typedef enum {
+    PMODE_ECO = 0,
+    PMODE_NORMAL,
+    PMODE_HI
+} pmode_t;
+
 // Display context structure
 typedef struct {
     // Display state
@@ -38,6 +45,7 @@ typedef struct {
     bool on;
     int8_t temp_setpoint;
     bmon_t battmon;
+    pmode_t pmode;
 
     // Temperature management
     int16_t temp_setpoint10;
@@ -58,6 +66,7 @@ typedef struct {
     bool newon;
     int8_t newtemp;
     bmon_t newbattmon;
+    pmode_t newpmode;
 } display_context_t;
 
 // Display brightness levels

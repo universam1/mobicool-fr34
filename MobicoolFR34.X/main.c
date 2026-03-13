@@ -51,6 +51,7 @@ typedef struct {
     uint8_t speed;
     uint8_t fanspin;
     bool running;
+    pmode_t pmode;
 } compressor_context_t;
 
 typedef struct {
@@ -113,10 +114,12 @@ static void system_init(display_context_t* display) {
     display->on = settings.on;
     display->temp_setpoint = settings.temp_setpoint;
     display->battmon = settings.battmon;
+    display->pmode = PMODE_NORMAL;
     display->temp_setpoint10 = settings.temp_setpoint * 10;
     display->newon = display->on;
     display->newtemp = display->temp_setpoint;
     display->newbattmon = display->battmon;
+    display->newpmode = PMODE_NORMAL;
     
     // Sync initial state to comms
     Comms_SetTargetTemperature(display->temp_setpoint10);
@@ -191,7 +194,15 @@ static bool update_battery(battery_context_t* battery, display_context_t* displa
 static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_context_t* temp) {
     uint8_t min = Compressor_GetMinSpeedIdx();
     uint8_t max = Compressor_GetMaxSpeedIdx();
+    
+    if (comp->pmode == PMODE_ECO) {
+        max = min + 3; // Approx 30% of max capability
+    } else if (comp->pmode == PMODE_NORMAL) {
+        max = max > 2 ? max - 2 : max; // Slightly below absolute max for longevity
+    }
+    
     uint8_t speedidx = comp->speed;
+    if (speedidx > max) speedidx = max;
     
     uint8_t remote_power = Comms_GetCompressorPower();
     uint8_t max_power = Comms_GetMaxPowerLimit();
@@ -361,6 +372,10 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
         display->battmon = display->newbattmon;
         Settings_SaveBattMon(display->battmon);
     }
+    
+    if (display->newpmode != display->pmode) {
+        display->pmode = display->newpmode;
+    }
 }
 
 void main(void) {
@@ -372,7 +387,8 @@ void main(void) {
         .timer = 20,
         .speed = 0,
         .fanspin = 0,
-        .running = false
+        .running = false,
+        .pmode = PMODE_NORMAL
     };
     
     uint8_t lastkeys = 0;
@@ -408,6 +424,7 @@ void main(void) {
         handle_key_press(keys, &lastkeys, &longpress, &display, &comp);
         
         comp.running = Compressor_IsOn();
+        comp.pmode = display.pmode;
         update_compressor_state(&comp, &temp, compressor_check);
         
         // Update display context with latest measurements and state
