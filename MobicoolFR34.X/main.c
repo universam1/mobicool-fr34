@@ -120,6 +120,9 @@ static void system_init(display_context_t* display) {
     display->newfahrenheit = display->fahrenheit;
     display->newbattmon = display->battmon;
     
+    // Sync initial state to comms
+    Comms_SetTargetTemperature(display->temp_setpoint10);
+    
     // Initial readings
     AnalogUpdate();
     display->temperature10 = AnalogGetTemperature10();
@@ -332,17 +335,28 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
         Settings_SaveOnOff(display->on);
     }
     
-    int16_t modbus_temp = Comms_GetTargetTemperature() / 10;
-    if (modbus_temp >= MIN_TEMP && modbus_temp <= MAX_TEMP) {
-        display->newtemp = (int8_t)modbus_temp;
-    }
-    
+    // 1. Process local UI changes (display->newtemp)
     if (display->newtemp != display->temp_setpoint) {
         display->temp_setpoint = display->newtemp;
         display->temp_setpoint10 = display->newtemp * 10;
         *temp_setpoint10 = display->temp_setpoint10;
         Settings_SaveTemp(display->temp_setpoint);
         Comms_SetTargetTemperature(display->temp_setpoint10);
+    }
+    
+    // 2. Process Remote Comms changes
+    int16_t comms_temp = Comms_GetTargetTemperature();
+    if (comms_temp != display->temp_setpoint10) {
+        if (comms_temp >= MIN_TEMP * 10 && comms_temp <= MAX_TEMP * 10) {
+            *temp_setpoint10 = comms_temp;
+            display->temp_setpoint10 = comms_temp;
+            display->temp_setpoint = comms_temp / 10;
+            display->newtemp = display->temp_setpoint; // Keep UI in sync
+            Settings_SaveTemp(display->temp_setpoint);
+        } else {
+            // Out of bounds remote command, revert it back to our safe active value
+            Comms_SetTargetTemperature(display->temp_setpoint10);
+        }
     }
     
     if (display->newfahrenheit != display->fahrenheit) {
