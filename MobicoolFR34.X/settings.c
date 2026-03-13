@@ -17,7 +17,7 @@ void Settings_Initialize(settings_t* settings) {
     if (settings->temp_setpoint < MIN_TEMP || settings->temp_setpoint > MAX_TEMP) {
         eeinvalid = true;
     }
-    settings->fahrenheit = DATAEE_ReadByte(EE_UNIT);
+    
     settings->battmon = DATAEE_ReadByte(EE_BATTMON);
     if (settings->battmon > BMON_HIGH) {
         eeinvalid = true;
@@ -30,9 +30,6 @@ void Settings_Initialize(settings_t* settings) {
         
         settings->temp_setpoint = DEFAULT_TEMP;
         DATAEE_WriteByte(EE_TEMP, (uint8_t)settings->temp_setpoint);
-        
-        settings->fahrenheit = false;
-        DATAEE_WriteByte(EE_UNIT, settings->fahrenheit);
         
         settings->battmon = BMON_LOW;
         DATAEE_WriteByte(EE_BATTMON, (uint8_t)settings->battmon);
@@ -47,10 +44,6 @@ void Settings_SaveOnOff(bool on) {
 
 void Settings_SaveTemp(int8_t temp) {
     DATAEE_WriteByte(EE_TEMP, (uint8_t)temp);
-}
-
-void Settings_SaveUnit(bool fahrenheit) {
-    DATAEE_WriteByte(EE_UNIT, fahrenheit);
 }
 
 void Settings_SaveBattMon(bmon_t level) {

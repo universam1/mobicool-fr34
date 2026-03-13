@@ -57,7 +57,6 @@ void Display_HandleKeyPress(display_context_t* ctx, uint8_t pressed_keys) {
         if (ctx->state < DISP_SET_BEGIN || ctx->state > DISP_SET_END) {
             ctx->state = DISP_SET_BEGIN;
             ctx->newtemp = ctx->temp_setpoint;
-            ctx->newfahrenheit = ctx->fahrenheit;
             ctx->newbattmon = ctx->battmon;
         }
         ctx->state++;
@@ -69,10 +68,6 @@ void Display_HandleKeyPress(display_context_t* ctx, uint8_t pressed_keys) {
     // Handle setting adjustments
     if (pressed_keys & KEY_MINUS && ctx->state == DISP_SET_TEMP && ctx->newtemp > MIN_TEMP) ctx->newtemp--;
     if (pressed_keys & KEY_PLUS && ctx->state == DISP_SET_TEMP && ctx->newtemp < MAX_TEMP) ctx->newtemp++;
-    
-    if (pressed_keys & (KEY_PLUS | KEY_MINUS) && ctx->state == DISP_SET_UNIT) {
-        ctx->newfahrenheit = !ctx->fahrenheit;
-    }
     
     if (ctx->state == DISP_SET_BATTMON) {
         if (pressed_keys & KEY_MINUS && ctx->newbattmon > BMON_DIS) ctx->newbattmon--;
@@ -144,20 +139,14 @@ void Display_Update(display_context_t* ctx, uint8_t pressed_keys) {
         }
         case DISP_SET_TEMP: {
             buf[0] = leds;
-            buf[4] = ctx->fahrenheit ? c_F : c_C | ADD_DOT;
+            buf[4] = c_C | ADD_DOT;
             if (!(ctx->flashtimer & 0x08)) {
-                int8_t disptemp = ctx->fahrenheit ? ((((ctx->newtemp * 9) + 2) / 5) + 32) : ctx->newtemp;
+                int8_t disptemp = ctx->newtemp;
                 uint8_t num = FormatDigits(NULL, disptemp, 0);
                 FormatDigits(&buf[4 - num], disptemp, 0); // Right justified
             }
             break;
         }
-        case DISP_SET_UNIT:
-            buf[0] = leds;
-            if (!(ctx->flashtimer & 0x08)) {
-                buf[4] = (ctx->newfahrenheit ? c_F : c_C) | ADD_DOT;
-            }
-            break;
         case DISP_SET_BATTMON: {
             buf[0] = leds;
             if (!(ctx->flashtimer & 0x08)) {
@@ -186,19 +175,12 @@ void Display_Update(display_context_t* ctx, uint8_t pressed_keys) {
         }
         case DISP_IDLE: {
             buf[0] = leds;
-            buf[4] = ctx->fahrenheit ? c_F : c_C | ADD_DOT;
-            bool tenths = true;
-            if (ctx->fahrenheit && ctx->temperature10 > 377) tenths = false;
-            int16_t disptemp;
-            if (tenths) {
-                disptemp = ctx->fahrenheit ? ((((ctx->temperature10 * 9) + 2) / 5) + 320) : ctx->temperature10;
-            } else {
-                int16_t temperature = (ctx->temperature10 + 5) / 10;
-                disptemp = ctx->fahrenheit ? ((((temperature * 9) + 2) / 5) + 32) : temperature;
-            }
-            uint8_t num = FormatDigits(NULL, disptemp, tenths ? 2 : 0);
-            FormatDigits(&buf[4 - num], disptemp, tenths ? 2 : 0);
-            if (tenths) buf[3] |= ADD_DOT;
+            buf[4] = c_C | ADD_DOT;
+            
+            int16_t disptemp = ctx->temperature10;
+            uint8_t num = FormatDigits(NULL, disptemp, 2);
+            FormatDigits(&buf[4 - num], disptemp, 2);
+            buf[3] |= ADD_DOT;
 
             if (!ctx->on) {
                 if ((ctx->flashtimer & 0x0f) < 0xa) {

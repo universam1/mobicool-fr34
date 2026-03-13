@@ -42,7 +42,6 @@ typedef enum {
 typedef struct {
     bool on;
     int8_t temp_setpoint;
-    bool fahrenheit;
     bmon_t battmon;
 } settings_t;
 
@@ -52,7 +51,6 @@ void Settings_Initialize(settings_t* settings);
 // Save individual settings to EEPROM
 void Settings_SaveOnOff(bool on);
 void Settings_SaveTemp(int8_t temp);
-void Settings_SaveUnit(bool fahrenheit);
 void Settings_SaveBattMon(bmon_t level);
 
 #endif /* SETTINGS_H */

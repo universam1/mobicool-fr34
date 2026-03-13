@@ -61,8 +61,7 @@ The physical buttons on the cooler operate as follows:
 ### SET Button
 * **Short Press:** Enters the **Settings Menu** and cycles through configuration options:
   1. **Target Temperature:** Use `PLUS (+)` and `MINUS (-)` to adjust the target setpoint (down to -18°C).
-  2. **Temperature Unit:** Use `+` or `-` to toggle between Celsius (`C`) and Fahrenheit (`F`).
-  3. **Battery Monitor Level:** Use `+` or `-` to select `HI`, `MEd`, or `Lo` for battery voltage cut-off thresholds.
+  2. **Battery Monitor Level:** Use `+` or `-` to select `HI`, `MEd`, or `Lo` for battery voltage cut-off thresholds.
 * The menu times out automatically after a few seconds of inactivity, permanently saving your changes to EEPROM.
 
 ## Building

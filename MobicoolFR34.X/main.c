@@ -112,12 +112,10 @@ static void system_init(display_context_t* display) {
     display->state = DISP_IDLE;
     display->on = settings.on;
     display->temp_setpoint = settings.temp_setpoint;
-    display->fahrenheit = settings.fahrenheit;
     display->battmon = settings.battmon;
     display->temp_setpoint10 = settings.temp_setpoint * 10;
     display->newon = display->on;
     display->newtemp = display->temp_setpoint;
-    display->newfahrenheit = display->fahrenheit;
     display->newbattmon = display->battmon;
     
     // Sync initial state to comms
@@ -357,11 +355,6 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
             // Out of bounds remote command, revert it back to our safe active value
             Comms_SetTargetTemperature(display->temp_setpoint10);
         }
-    }
-    
-    if (display->newfahrenheit != display->fahrenheit) {
-        display->fahrenheit = display->newfahrenheit;
-        Settings_SaveUnit(display->fahrenheit);
     }
     
     if (display->newbattmon != display->battmon) {

@@ -11,7 +11,6 @@ typedef enum {
 
     DISP_SET_BEGIN,
     DISP_SET_TEMP,     // Set temperature set point
-    DISP_SET_UNIT,     // Set temperature unit (C/F)
     DISP_SET_BATTMON,  // Set battery monitor level
     DISP_SET_END,
 
@@ -38,7 +37,6 @@ typedef struct {
     // Settings
     bool on;
     int8_t temp_setpoint;
-    bool fahrenheit;
     bmon_t battmon;
 
     // Temperature management
@@ -59,7 +57,6 @@ typedef struct {
     // New settings (to be applied)
     bool newon;
     int8_t newtemp;
-    bool newfahrenheit;
     bmon_t newbattmon;
 } display_context_t;
 
