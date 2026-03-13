@@ -195,13 +195,13 @@ static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_conte
     uint8_t max = Compressor_GetMaxSpeedIdx();
     uint8_t speedidx = comp->speed;
     
-    uint8_t modbus_power = Comms_GetCompressorPower();
+    uint8_t remote_power = Comms_GetCompressorPower();
     uint8_t max_power = Comms_GetMaxPowerLimit();
     
-    if (modbus_power > 0 && max_power > 0) {
+    if (remote_power > 0 && max_power > 0) {
         // Scale speed based on max power limit
         uint32_t maxSpeed = (20UL * max_power) / 100;
-        speedidx = (uint8_t)((modbus_power * maxSpeed) / 100);
+        speedidx = (uint8_t)((remote_power * maxSpeed) / 100);
     } else {
         int16_t tempdiff = (temp->temperature10 - temp->temp_setpoint10);
         

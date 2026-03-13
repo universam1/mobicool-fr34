@@ -1,7 +1,7 @@
 # ESP32 Companion for Mobicool FR34 Cooler
 
 Adds wireless monitoring and control to the Mobicool FR34 compressor cooler.
-The ESP32 speaks **Modbus RTU** over the 3-wire UART exposed on the PIC16F1829
+The ESP32 speaks a **custom 1-wire protocol** over the UART exposed on the PIC16F1829
 mainboard, then exposes two selectable transport modes:
 
 | Transport | How to access |
@@ -28,9 +28,9 @@ See [WIRING.md](WIRING.md) for full solder-point details.
 
 | Cooler PCB point   | ESP32 GPIO | Direction |
 |--------------------|:----------:|-----------|
-| PIC pin 2 — RA5 TX | GPIO 16 (RX2) | Cooler → ESP32 |
-| PIC pin 9 — RC7 RX | GPIO 17 (TX2) | ESP32 → Cooler |
-| GND                | GND        | Common ground |
+| PIC pin 9 — RC7 | GPIO 16 | Bi-directional (Open-drain) |
+| GND | GND | Common ground |
+|  |
 
 Power the ESP32 from USB or a dedicated regulator — do **not** draw power from
 the cooler mainboard.
@@ -161,7 +161,7 @@ platformio.ini          Build configuration (fr34-wifi / fr34-ble targets)
 WIRING.md               Solder points, wiring diagram, register map
 src/
   main.cpp              Application entry point; transport selection via #ifdef
-  modbus_master.h/.cpp  Modbus RTU driver (FC03 read, FC06 write)
+  comms_master.h/.cpp  Single-wire half-duplex UART driver
   web_ui.h              WiFi dashboard HTML (Vue 3 SPA, raw-string literal)
   vue_js.h              Vue 3 production build embedded for offline serving
 docs/                   Web Bluetooth PWA (served via GitHub Pages)
@@ -175,9 +175,9 @@ docs/                   Web Bluetooth PWA (served via GitHub Pages)
 
 ---
 
-## Modbus Register Map
+## Custom Protocol Overview
 
-See [WIRING.md](WIRING.md#register-map) for the full table. Quick reference:
+The ESP32 polls these values using a custom bit-bang/UART frame format:
 
 | Address | Name | Access | Unit |
 |---------|------|--------|------|
@@ -188,4 +188,4 @@ See [WIRING.md](WIRING.md#register-map) for the full table. Quick reference:
 | `0x0004` | Compressor power override | R/W | 0–100 % (0 = auto) |
 | `0x0005` | Compressor power cap | R/W | 0–100 % |
 
-Protocol: 9600 baud, 8N1, slave address `0x01`.
+Protocol: 9600 baud, 8N1, Open-Drain half-duplex with XOR CRC8.

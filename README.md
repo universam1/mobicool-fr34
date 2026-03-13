@@ -44,6 +44,27 @@ The motor controller for the brushless DC-motor driving the compressor is an IRM
 
 This firmware was originally developed using the MPLAB X IDE v4.20 and the free XC8 C compiler v2.00.
 
+## Cooler UI & Menu Guide
+
+The physical buttons on the cooler operate as follows:
+
+### ON/OFF Button
+* **Long Press (Hold for a few seconds):** Powers the cooler ON or OFF.
+* **Short Press:** Cycles through the informational **Status Menu**:
+  1. `XX.XV` - Battery/Supply Voltage
+  2. `XX W` - Compressor Power Consumption (Approximate)
+  3. Compressor Timer (Countdown to next run/lockout)
+  4. `%` - Compressor Speed (Duty cycle percentage)
+  5. `A` - Fan Current (mA)
+  6. Temperature Rate of Change
+
+### SET Button
+* **Short Press:** Enters the **Settings Menu** and cycles through configuration options:
+  1. **Target Temperature:** Use `PLUS (+)` and `MINUS (-)` to adjust the target setpoint (down to -18°C).
+  2. **Temperature Unit:** Use `+` or `-` to toggle between Celsius (`C`) and Fahrenheit (`F`).
+  3. **Battery Monitor Level:** Use `+` or `-` to select `HI`, `MEd`, or `Lo` for battery voltage cut-off thresholds.
+* The menu times out automatically after a few seconds of inactivity, permanently saving your changes to EEPROM.
+
 ## Building
 
 The firmware can be compiled entirely from Docker — no MPLAB X IDE or local toolchain installation required. The build downloads XC8 v3.10 and the PIC12-16F1xxx Device Family Pack automatically.
@@ -133,8 +154,8 @@ esp32-companion/
 ├── platformio.ini          # PlatformIO project configuration
 └── src/
     ├── main.cpp            # WiFi AP, HTTP server, WebSocket, poll loop
-    ├── modbus_master.h     # CoolerState struct + ModbusMaster declaration
-    ├── modbus_master.cpp   # Modbus RTU FC03/FC06 implementation
+    ├── comms_master.h      # CoolerState struct + CommsMaster declaration
+    ├── comms_master.cpp    # Single-wire communication implementation
     └── web_ui.h            # Vue 3 SPA embedded as C string literal
 ```
 

@@ -16,7 +16,7 @@ A two-part solution to upgrade and remotely manage a Mobicool FR34/FR40 compress
 - **Electrical Topology**: Open-drain on both sides. The ESP32 uses an internal `INPUT_PULLUP` (~45 kΩ), which is electrically sufficient for wires < 30 cm at 9600 baud. No external pull-up is needed unless the wire is long or the environment is excessively noisy.
 
 ## 3. Communication Protocol (`comms.c` / `comms_master.cpp`)
-Originally based on Modbus RTU (requiring 2 data wires + heavy CRC logic), the protocol was completely rewritten for efficiency, reducing memory usage on the PIC and freeing up PIC Pin 2 (RA5).
+The protocol is a lightweight custom 1-wire architecture designed for efficiency, reducing memory usage on the PIC and freeing up PIC Pin 2 (RA5).
 
 ### Layer 1: Hardware/Physical
 - **Topology**: Single-wire half-duplex (9600 baud, 8N1). 
@@ -46,7 +46,7 @@ Originally based on Modbus RTU (requiring 2 data wires + heavy CRC logic), the p
 - **Historical Fixes to remember**:
   - Replaced 16-bit comparisons on 8-bit timer values (`uint8_t tmpTMR0 = (uint8_t)TMR0`) to prevent infinite looping wrap-around bugs.
   - Corrected `MIN_VALID_TEMP` from `-150` to `-200` to allow the cooler to reach its hardware minimum of -18°C.
-  - Decoupled `modbus/comms` inter-frame delays from `TMR1` (which caused jitter), utilizing `TMR0IF` manual overflow polling instead.
+  - Decoupled payload/comms inter-frame delays from `TMR1` (which caused jitter), utilizing `TMR0IF` manual overflow polling instead.
 
 ### ESP32 Companion (`esp32-companion/`)
 - **Framework**: Arduino core via PlatformIO.

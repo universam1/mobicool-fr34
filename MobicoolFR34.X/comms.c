@@ -17,7 +17,7 @@ static uint8_t compressorPower    = 0;    // Default 0 % (auto)
 static uint8_t compressorMaxPower = 100;  // Default 100 %
 
 // ── Timer0 initialisation ─────────────────────────────────────────────────
-// Same configuration as the former modbus.c — TMR0 is shared for bit timing.
+// Same configuration as the former comms code — TMR0 is shared for bit timing.
 static void Timer0_Initialize(void) {
     OPTION_REGbits.TMR0CS = 0;      // Internal clock (FOSC/4)
     OPTION_REGbits.PSA    = 0;      // Prescaler assigned to TMR0
