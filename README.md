@@ -69,9 +69,19 @@ The physical buttons on the cooler operate as follows:
 
 The cooler offers three compressor control strategies:
 
-* **Eco:** Limits the top compressor speed and uses a 2.0 °C restart hysteresis. Once the compressor stops, the cabinet is allowed to warm up about 2 °C above the setpoint before it starts again, reducing cycling frequency.
-* **Std:** Uses the normal automatic speed control with a 1.0 °C restart hysteresis.
-* **Hi:** Prioritizes pull-down and hold performance. After reaching the target temperature, the compressor stays on at minimum speed instead of shutting off immediately, and only turns off after cooling about 2.0 °C below the setpoint.
+* **Eco:** Prioritizes low power consumption and battery longevity.
+  * Speed is capped to approximately 30% of the hardware maximum.
+  * Speed backs off when compressor power exceeds **30 %** (vs. 45 % in Std).
+  * Uses a **2.0 °C restart hysteresis**: once the compressor stops, the cabinet is allowed to warm 2 °C above the setpoint before it starts again, reducing cycling frequency.
+* **Std:** Balanced automatic speed control.
+  * Speed is capped slightly below the hardware maximum for longevity.
+  * Speed backs off when compressor power exceeds **45 %**.
+  * Uses a **1.0 °C restart hysteresis**.
+* **Hi:** Prioritizes pull-down speed and sustained hold performance.
+  * Speed is uncapped (full hardware maximum).
+  * Speed ramps directly to maximum on every 60-second tick — no gradual step-up.
+  * The power throttle is **disabled** entirely; the compressor runs as hard as it can.
+  * After reaching the target temperature, the compressor stays on at minimum speed instead of shutting off immediately, and only turns off after the cabinet cools **2.0 °C below the setpoint**.
 
 ## Building
 

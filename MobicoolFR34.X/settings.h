@@ -28,7 +28,8 @@ typedef enum {
 #define COMP_LOCKOUT_TIME 99   // Compressor lockout time in seconds
 #define FAN_SPINDOWN_TIME 120  // Fan spindown time in seconds
 #define LONG_PRESS_TIME 20     // Long press detection time in 100ms units
-#define HIGH_POWER_THRESHOLD 45 // High power threshold for compressor speed reduction
+#define HIGH_POWER_THRESHOLD 45    // High power threshold for compressor speed reduction (Normal mode)
+#define HIGH_POWER_THRESHOLD_ECO 30 // Power threshold for Eco mode
 #define TEMP_HYSTERESIS_DEFAULT 10 // 1.0°C restart offset in normal/Hi mode
 #define TEMP_HYSTERESIS_ECO 20    // 2.0°C restart offset in Eco mode
 #define TEMP_OVERSHOOT_HI 20      // 2.0°C extra cooling before Hi mode shuts down

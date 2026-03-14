@@ -223,22 +223,28 @@ static uint8_t calculate_compressor_speed(compressor_context_t* comp, temp_conte
             if (temp->temp_rate_tick == 60) {
                 temp->temp_rate = temp->temperature10 - temp->last_temp;
                 
-                if (tempdiff > 100 && AnalogGetCompPower() < 45) {
-                    speedidx = max;
-                } else if (tempdiff > 40) {
-                    if (temp->temp_rate > -5 && speedidx < max) speedidx++;
-                    else if (temp->temp_rate < -5 && speedidx > min) speedidx--;
+                if (comp->pmode == PMODE_HI) {
+                    speedidx = max; // Aggressive: always full speed when running
                 } else {
-                    if (temp->temp_rate > -1 && speedidx < max) speedidx++;
-                    else if (temp->temp_rate < -1 && speedidx > min) speedidx--;
+                    uint8_t pwr_threshold = (comp->pmode == PMODE_ECO) ? HIGH_POWER_THRESHOLD_ECO : HIGH_POWER_THRESHOLD;
+                    if (tempdiff > 100 && AnalogGetCompPower() < pwr_threshold) {
+                        speedidx = max;
+                    } else if (tempdiff > 40) {
+                        if (temp->temp_rate > -5 && speedidx < max) speedidx++;
+                        else if (temp->temp_rate < -5 && speedidx > min) speedidx--;
+                    } else {
+                        if (temp->temp_rate > -1 && speedidx < max) speedidx++;
+                        else if (temp->temp_rate < -1 && speedidx > min) speedidx--;
+                    }
                 }
                 
                 temp->temp_rate_tick = 0;
                 temp->last_temp = temp->temperature10;
             }
             
-            if (AnalogGetCompPower() > 45 && speedidx > min) {
-                speedidx--;
+            if (comp->pmode != PMODE_HI && speedidx > min) {
+                uint8_t pwr_threshold = (comp->pmode == PMODE_ECO) ? HIGH_POWER_THRESHOLD_ECO : HIGH_POWER_THRESHOLD;
+                if (AnalogGetCompPower() > pwr_threshold) speedidx--;
             }
         }
     }
