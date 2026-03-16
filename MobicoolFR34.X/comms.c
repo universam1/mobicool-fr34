@@ -33,11 +33,11 @@ static uint8_t crc8(const uint8_t *buf, uint8_t len) {
 }
 
 // ── Open-drain TX helpers ─────────────────────────────────────────────────
-// LATC7 is permanently 0 (set at init).  Direction controls the line level:
-//   TRISC7 = 0 → output drives 0 (pull low)
-//   TRISC7 = 1 → input/hi-Z, pullup holds line high
+// LATA0 is permanently 0 (set at init).  Direction controls the line level:
+//   TRISA0 = 0 → output drives 0 (pull low)
+//   TRISA0 = 1 → input/hi-Z, pullup holds line high
 
-// Transmit one byte (8N1).  Leaves TRISC7=1 (hi-Z) after stop bit.
+// Transmit one byte (8N1).  Leaves TRISA0=1 (hi-Z) after stop bit.
 static void comms_tx_byte(uint8_t data) {
     uint8_t t = (uint8_t)TMR0;
 
@@ -172,6 +172,7 @@ static void comms_handle(uint8_t cmd, const uint8_t *payload, uint8_t len) {
 // ── Public API ────────────────────────────────────────────────────────────
 void Comms_Initialize(void) {
     Timer0_Initialize();
+    ANSELAbits.ANSA0 = 0; // RA0 is set analog by MCC default; switch to digital
     COMMS_LAT  = 0;    // always drive 0; direction controls the level
     COMMS_TRIS = 1;    // start as input (hi-Z, line held high by pullup)
 }

@@ -35,7 +35,7 @@ Pin | Function
 16 RC0 | Output controlling a load switch (MMUN2232), needs to be on for compressor to start/run
 17 RA2 AN2 | Input voltage monitor (10V in == 598mV)
 18 ICSP clk RA1 | (also connected to load switch for internal light)
-19 ICSP dat | 
+19 ICSP dat RA0 | ESP32 companion single-wire data (J2 header pin)
 20 GND | 
 
 The display/buttons board uses an interesting chip I've never seen before, the TM1620B from Shenzhen Titan Micro Electronics (http://www.titanmec.com/index.php/en/product/view/id/285.html) with a Chinese-language-only datasheet. Luckily it is a very straight-forward chip to program, take a look at the tm1620b.c code, where the segment mapping is also described for this particular application. 
@@ -129,20 +129,20 @@ The `esp32-companion/` directory contains a self-contained [PlatformIO](https://
 | WiFi AP | SSID `FR34-Cooler`, open network, IP `192.168.4.1` |
 | Web UI  | Vue 3 SPA with live metrics, setpoint ±0.5 °C buttons, compressor override & power-cap sliders |
 | Protocol | WebSocket for real-time push updates (1 s interval) |
-| Comms   | Single-wire half-duplex, 9600 baud, open-drain on RC7 (PIC pin 9) only — **RA5 not needed** |
+| Comms   | Single-wire half-duplex, 9600 baud, open-drain on RA0/ICSPDAT (PIC pin 19, J2 header) — **RA5 not needed** |
 | REST API | `GET /api/state` returns current state as JSON |
 
 ### Wiring
 
 See [`esp32-companion/WIRING.md`](esp32-companion/WIRING.md) for the full wiring table and ASCII diagram.  
-**TL;DR** — **two wires only** (one data + GND), soldered to PIC pin 9, no level-shifter, no external resistor:
+**TL;DR** — **two wires only** (one data + GND), connected to J2 header pin 19 (RA0/ICSPDAT), no level-shifter, no external resistor:
 
-| Cooler PCB point | Signal | ESP32 GPIO |
-|:----------------:|--------|:----------:|
-| PIC pin 9 (RC7)  | Data (open-drain) | GPIO 16 (`INPUT_PULLUP`) |
-| GND pad          | GND               | GND |
+| Cooler PCB point              | Signal            | ESP32 GPIO |
+|:-----------------------------:|-------------------|:----------:|
+| PIC pin 19 (RA0/ICSPDAT, J2) | Data (open-drain) | GPIO 4 (`INPUT_PULLUP`) |
+| GND pad                       | GND               | GND |
 
-> **Note:** J4 on the mainboard is the PIC↔IRMCF183 motor-controller link — do not use it. RA5 (PIC pin 2) is not used by the ESP32 companion. Solder a single wire to PIC pin 9 (RC7) directly. The ESP32 internal pullup (~45 kΩ) is sufficient for wire lengths up to ~30 cm; add an external 4.7 kΩ pullup to 3.3 V for longer runs.
+> **Note:** J4 on the mainboard is the PIC↔IRMCF183 motor-controller link — do not use it. RA5 (PIC pin 2) is not used by the ESP32 companion. Connect the data wire to the J2 ICSP header pin 19 (RA0/ICSPDAT). The ESP32 internal pullup (~45 kΩ) is sufficient for wire lengths up to ~30 cm; add an external 4.7 kΩ pullup to 3.3 V for longer runs.
 
 ### Building & flashing the ESP32
 

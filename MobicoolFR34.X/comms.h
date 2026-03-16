@@ -6,10 +6,11 @@
 
 // ── Single-wire half-duplex protocol ──────────────────────────────────────
 //
-// Physical layer: open-drain bit-bang UART, 9600 8N1, RC7 only.
-//   TX: LATCbits.LATC7 stays 0.  TRISC7=0 → pull low (bit=0).
-//                                 TRISC7=1 → hi-Z, pullup → high (bit=1).
-//   RX: TRISC7=1, sample PORTCbits.RC7.
+// Physical layer: open-drain bit-bang UART, 9600 8N1, RA0 (ICSPDAT) only.
+//   RA0 is PIC pin 19, available on the J2 ICSP header — no soldering required.
+//   TX: LATAbits.LATA0 stays 0.  TRISA0=0 → pull low (bit=0).
+//                                 TRISA0=1 → hi-Z, pullup → high (bit=1).
+//   RX: TRISA0=1, sample PORTAbits.RA0.
 //   Line idles HIGH via ESP32 INPUT_PULLUP (~45 kΩ).  No external resistor.
 //
 // Protocol (ESP32 always initiates, PIC responds only):
@@ -36,10 +37,10 @@
 //   [8]   comp power    uint8  0-100 %
 //   [9]   comp pmax     uint8  0-100 %
 
-// Pin definitions — RC7 open-drain bidirectional
-#define COMMS_PIN           PORTCbits.RC7
-#define COMMS_TRIS          TRISCbits.TRISC7
-#define COMMS_LAT           LATCbits.LATC7
+// Pin definitions — RA0 (ICSPDAT, PIC pin 19, J2 header) open-drain bidirectional
+#define COMMS_PIN           PORTAbits.RA0
+#define COMMS_TRIS          TRISAbits.TRISA0
+#define COMMS_LAT           LATAbits.LATA0
 
 void    Comms_Initialize(void);
 void    Comms_Process(void);

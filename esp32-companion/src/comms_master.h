@@ -37,7 +37,7 @@ struct CoolerState {
 
 class CommsMaster {
 public:
-    // pin  : GPIO wired to PIC RC7 (PIC pin 9)
+    // pin  : GPIO wired to PIC RA0/ICSPDAT (PIC pin 19, J2 header)
     // baud : must match PIC firmware (default 9600)
     void begin(int pin, uint32_t baud = 9600);
 

@@ -10,7 +10,7 @@ A two-part solution to upgrade and remotely manage a Mobicool FR34/FR40 compress
 ## 2. Hardware Interface & Wiring
 - **Voltages**: Both the PIC logic and ESP32-C3 operate at **3.3 V**. No level-shifters are required.
 - **Connection**: Only 2 wires are used (Data + GND) using a single-wire half-duplex topology.
-  - **Data Pin**: Solder to **PIC pin 9 (RC7)**. Do **NOT** use the J4 header (J4 is the PIC ↔ IRMCF183 proprietary motor-controller link).
+  - **Data Pin**: Connect to **PIC pin 19 (RA0/ICSPDAT)** via the **J2 ICSP header** — no soldering to a PIC pin required. Do **NOT** use the J4 header (J4 is the PIC ↔ IRMCF183 proprietary motor-controller link). Disconnect the ESP32 before ICSP programming.
   - **ESP32-C3 Pin**: **GPIO 4**. (GPIO 11–17 are reserved for the ESP32-C3-MINI-1 internal SPI flash and are not accessible on the DevKitM-1 headers.)
 - **Power**: The ESP32-C3 must be powered by its own separate 5V/3.3V supply. The cooler's internal LDO cannot reliably handle the ESP32's current spikes.
 - **Electrical Topology**: Open-drain on both sides. The ESP32-C3 uses an internal `INPUT_PULLUP` (~45 kΩ), which is electrically sufficient for wires < 30 cm at 9600 baud. No external pull-up is needed unless the wire is long or the environment is excessively noisy.

@@ -4,8 +4,9 @@
 
 The ESP32-C3 companion communicates over a **single wire** using an open-drain
 half-duplex protocol (similar to Dallas 1-Wire but at standard UART framing).
-Only **two connections** are needed: one data wire to PIC pin 9 (RC7) and a
-shared GND.  RA5 (PIC pin 2) is **not** used.
+Only **two connections** are needed: one data wire to PIC pin 19 (RA0/ICSPDAT)
+and a shared GND.  RA0 is available on the **J2 ICSP header** — no soldering
+directly to a PIC pin is required.  RA5 (PIC pin 2) is **not** used.
 
 ---
 
@@ -23,7 +24,7 @@ No level-shifter required.
   │
   ├──── GPIO 4   (ESP32-C3) INPUT_PULLUP idle / OUTPUT+LOW to transmit 0
   │
-  └──── RC7 / PIC pin 9     TRISC7=1 idle / TRISC7=0 to transmit 0
+  └──── RA0 / ICSPDAT / PIC pin 19 (J2 header)  TRISA0=1 idle / TRISA0=0 to transmit 0
 
        Both sides only ever PULL LOW.
        The pullup is the only driver of the HIGH state.
@@ -45,7 +46,7 @@ wire — well within the 104 µs bit period at 9600 baud.
 
 | PIC pin | Name | Note |
 |:-------:|------|------|
-| 9       | RC7  | Data line.  Unconnected on the stock board; solder directly to the PIC pin or its via. |
+| 19      | RA0 / ICSPDAT | Data line.  Available on the **J2 ICSP header** — no direct soldering to a PIC pin required. Disconnect ESP32 before ICSP programming. |
 | any GND | GND  | Several GND vias are available near the board edge. |
 
 Use a **separate supply** (ESP32-C3 devkit USB or a dedicated 3.3 V/5 V regulator)
@@ -55,10 +56,10 @@ to power the ESP32-C3.  Do not draw power from the cooler mainboard.
 
 ## Connection table
 
-| Cooler PCB point | Signal            | ESP32-C3 GPIO                 |
-|:----------------:|-------------------|:-----------------------------:|
-| PIC pin 9 (RC7)  | Data (open-drain) | **GPIO 4** (`INPUT_PULLUP`)   |
-| GND pad          | GND               | **GND**                       |
+| Cooler PCB point              | Signal            | ESP32-C3 GPIO               |
+|:-----------------------------:|-------------------|-:---------------------------:|
+| PIC pin 19 (RA0/ICSPDAT, J2) | Data (open-drain) | **GPIO 4** (`INPUT_PULLUP`) |
+| GND pad                       | GND               | **GND**                     |
 
 **Only 2 wires.**  Do not connect VCC.
 
@@ -69,8 +70,8 @@ to power the ESP32-C3.  Do not draw power from the cooler mainboard.
 ```
  Cooler PCB                   ESP32-C3-DevKitM-1
  ┌───────────────────┐        ┌──────────────────┐
- │ PIC pin9  RC7    ─┼────────┼─ GPIO4            │
- │ GND ──────────────┼────────┼─ GND             │
+ │ J2 pin19 RA0/ICSPDAT ─┤────────├─ GPIO4            │
+ │ GND ───────────────┤────────├─ GND             │
  └───────────────────┘        │                  │
                               │  USB (power)     │
                               └──────────────────┘

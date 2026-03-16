@@ -45,7 +45,7 @@
 
 // ── Common configuration ───────────────────────────────────────────────────
 static constexpr char     DEVICE_NAME[] = "FR34-Cooler";
-static constexpr int      COMMS_DATA_PIN = 4;    // open-drain single wire → PIC RC7 (GPIO 4)
+static constexpr int      COMMS_DATA_PIN = 4;    // open-drain single wire → PIC RA0/ICSPDAT (GPIO 4)
 static constexpr uint32_t COMMS_BAUD     = 9600;
 static constexpr uint32_t POLL_MS       = 1000;
 

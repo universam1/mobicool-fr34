@@ -31,9 +31,9 @@ See [WIRING.md](WIRING.md) for full solder-point details.
 
 **Summary:**
 
-| Cooler PCB point      | ESP32-C3 GPIO | Direction |
-|-----------------------|:-------------:|-----------|
-| PIC pin 9 — RC7 | GPIO 4 | Bi-directional (Open-drain) |
+| Cooler PCB point              | ESP32-C3 GPIO | Direction |
+|-------------------------------|:-------------:|-----------|
+| PIC pin 19 — RA0 (ICSPDAT, J2) | GPIO 4 | Bi-directional (Open-drain) |
 | GND | GND | Common ground |
 |  |
 
