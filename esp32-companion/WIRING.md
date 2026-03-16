@@ -1,8 +1,8 @@
-# Wiring — PIC16F1829 Mainboard ↔ ESP32
+# Wiring — PIC16F1829 Mainboard ↔ ESP32-C3-DevKitM-1
 
 ## Overview
 
-The ESP32 companion communicates over a **single wire** using an open-drain
+The ESP32-C3 companion communicates over a **single wire** using an open-drain
 half-duplex protocol (similar to Dallas 1-Wire but at standard UART framing).
 Only **two connections** are needed: one data wire to PIC pin 9 (RC7) and a
 shared GND.  RA5 (PIC pin 2) is **not** used.
@@ -11,7 +11,7 @@ shared GND.  RA5 (PIC pin 2) is **not** used.
 
 ## Voltage compatibility
 
-Both the cooler mainboard and the ESP32 devkit operate at **3.3 V logic**.
+Both the cooler mainboard and the ESP32-C3-DevKitM-1 operate at **3.3 V logic**.
 No level-shifter required.
 
 ---
@@ -19,9 +19,9 @@ No level-shifter required.
 ## Open-drain bus explained
 
 ```
-3.3 V (from ESP32 VDD via INPUT_PULLUP ~45 kΩ)
+3.3 V (from ESP32-C3 VDD via INPUT_PULLUP ~45 kΩ)
   │
-  ├──── GPIO 16  (ESP32)    INPUT_PULLUP idle / OUTPUT+LOW to transmit 0
+  ├──── GPIO 4   (ESP32-C3) INPUT_PULLUP idle / OUTPUT+LOW to transmit 0
   │
   └──── RC7 / PIC pin 9     TRISC7=1 idle / TRISC7=0 to transmit 0
 
@@ -30,7 +30,10 @@ No level-shifter required.
        Collision-free because protocol is strictly request/response.
 ```
 
-The ESP32 internal pullup (~45 kΩ) gives a rise time of ~4.5 µs on a 10 cm
+> **ESP32-C3-MINI-1 pin note:** GPIO 11–17 are reserved for internal SPI flash
+> and are **not** available on the DevKitM-1 headers. GPIO 4 is used instead.
+
+The ESP32-C3 internal pullup (~45 kΩ) gives a rise time of ~4.5 µs on a 10 cm
 wire — well within the 104 µs bit period at 9600 baud.
 
 ---
@@ -45,17 +48,17 @@ wire — well within the 104 µs bit period at 9600 baud.
 | 9       | RC7  | Data line.  Unconnected on the stock board; solder directly to the PIC pin or its via. |
 | any GND | GND  | Several GND vias are available near the board edge. |
 
-Use a **separate supply** (ESP32 devkit USB or a dedicated 3.3 V/5 V regulator)
-to power the ESP32.  Do not draw power from the cooler mainboard.
+Use a **separate supply** (ESP32-C3 devkit USB or a dedicated 3.3 V/5 V regulator)
+to power the ESP32-C3.  Do not draw power from the cooler mainboard.
 
 ---
 
 ## Connection table
 
-| Cooler PCB point | Signal           | ESP32 GPIO                     |
-|:----------------:|------------------|:------------------------------:|
-| PIC pin 9 (RC7)  | Data (open-drain) | **GPIO 16** (`INPUT_PULLUP`)  |
-| GND pad          | GND              | **GND**                        |
+| Cooler PCB point | Signal            | ESP32-C3 GPIO                 |
+|:----------------:|-------------------|:-----------------------------:|
+| PIC pin 9 (RC7)  | Data (open-drain) | **GPIO 4** (`INPUT_PULLUP`)   |
+| GND pad          | GND               | **GND**                       |
 
 **Only 2 wires.**  Do not connect VCC.
 
@@ -64,9 +67,9 @@ to power the ESP32.  Do not draw power from the cooler mainboard.
 ## Wiring diagram (ASCII)
 
 ```
- Cooler PCB                   ESP32 DevKit
+ Cooler PCB                   ESP32-C3-DevKitM-1
  ┌───────────────────┐        ┌──────────────────┐
- │ PIC pin9  RC7    ─┼────────┼─ GPIO16           │
+ │ PIC pin9  RC7    ─┼────────┼─ GPIO4            │
  │ GND ──────────────┼────────┼─ GND             │
  └───────────────────┘        │                  │
                               │  USB (power)     │

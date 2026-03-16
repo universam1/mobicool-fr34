@@ -1,7 +1,7 @@
-# ESP32 Companion for Mobicool FR34 Cooler
+# ESP32-C3 Companion for Mobicool FR34 Cooler
 
 Adds wireless monitoring and control to the Mobicool FR34 compressor cooler.
-The ESP32 speaks a **custom 1-wire protocol** over the UART exposed on the PIC16F1829
+The ESP32-C3 speaks a **custom 1-wire protocol** over the UART exposed on the PIC16F1829
 mainboard, then exposes two selectable transport modes:
 
 | Transport | How to access |
@@ -24,15 +24,20 @@ Both transports expose the same data and controls:
 
 See [WIRING.md](WIRING.md) for full solder-point details.
 
+**Board: ESP32-C3-DevKitM-1** (ESP32-C3-MINI-1 module, integrated USB Serial/JTAG)
+
+> GPIO 11–17 are reserved for internal SPI flash on the C3-MINI-1 module and are
+> not available on the headers. GPIO 4 is used for the data line.
+
 **Summary:**
 
-| Cooler PCB point   | ESP32 GPIO | Direction |
-|--------------------|:----------:|-----------|
-| PIC pin 9 — RC7 | GPIO 16 | Bi-directional (Open-drain) |
+| Cooler PCB point      | ESP32-C3 GPIO | Direction |
+|-----------------------|:-------------:|-----------|
+| PIC pin 9 — RC7 | GPIO 4 | Bi-directional (Open-drain) |
 | GND | GND | Common ground |
 |  |
 
-Power the ESP32 from USB or a dedicated regulator — do **not** draw power from
+Power the ESP32-C3 from USB or a dedicated regulator — do **not** draw power from
 the cooler mainboard.
 
 ---
@@ -57,7 +62,7 @@ pio device monitor -e fr34-dual
 
 The `default_envs` in `platformio.ini` is `fr34-dual`, so a plain `pio run`
 builds both transports. Use the single-transport targets to save flash space
-(the dual build uses ~96% of the default 1.25 MB partition). Run these commands
+(the dual build uses ~96% of the default partition). Run these commands
 from the repository root, where `platformio.ini` now lives.
 
 ### Dependencies (managed automatically by PlatformIO)

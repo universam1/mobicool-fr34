@@ -1,15 +1,20 @@
 /**
- * ESP32 companion for Mobicool FR34 cooler
+ * ESP32-C3 companion for Mobicool FR34 cooler
  *
  * Single-wire half-duplex protocol over RC7 (PIC pin 9).
- * ESP32 GPIO16 is the single open-drain data line; no level-shifter needed
- * (both sides 3.3 V). The ESP32 INPUT_PULLUP (~45 kΩ) is sufficient for
+ * ESP32-C3 GPIO4 is the single open-drain data line; no level-shifter needed
+ * (both sides 3.3 V). The ESP32-C3 INPUT_PULLUP (~45 kΩ) is sufficient for
  * wire lengths up to ~30 cm at 9600 baud; add an external 4.7 kΩ for longer.
+ *
+ * Uses UART1 (Serial1) — GPIO 11-17 are reserved for internal SPI flash on
+ * the ESP32-C3-MINI-1 module, so GPIO 16 is not available.
+ * UART0 (Serial) is used for debug output via the integrated USB Serial/JTAG
+ * peripheral; no separate USB-UART chip is needed on the DevKitM-1.
  *
  * Hardware connections
  * ─────────────────────────────────────────────────────────────────────
- *  PIC pin   Signal      ESP32 GPIO
- *  RC7  (9)  DATA        16  (open-drain, INPUT_PULLUP)
+ *  PIC pin   Signal      ESP32-C3 GPIO
+ *  RC7  (9)  DATA        4  (open-drain, INPUT_PULLUP)
  *  GND       GND         GND
  *
  * No RA5 connection required.
@@ -40,7 +45,7 @@
 
 // ── Common configuration ───────────────────────────────────────────────────
 static constexpr char     DEVICE_NAME[] = "FR34-Cooler";
-static constexpr int      COMMS_DATA_PIN = 16;   // open-drain single wire → PIC RC7
+static constexpr int      COMMS_DATA_PIN = 4;    // open-drain single wire → PIC RC7 (GPIO 4)
 static constexpr uint32_t COMMS_BAUD     = 9600;
 static constexpr uint32_t POLL_MS       = 1000;
 
@@ -244,7 +249,7 @@ void setup() {
 #endif
 
     comms.begin(COMMS_DATA_PIN, COMMS_BAUD);
-    Serial.println("[FR34] Comms initialised (GPIO16 open-drain, 9600 baud)");
+    Serial.println("[FR34] Comms initialised (GPIO4 open-drain, 9600 baud)");
 
 #ifdef TRANSPORT_WIFI
     wifiSetup();
