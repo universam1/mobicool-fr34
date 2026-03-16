@@ -75,7 +75,7 @@ bool CommsMaster::transact(uint8_t cmd,
     if (respLen != expectedRxLen) return false;
 
     // 6. Receive the response payload
-    uint8_t respPayload[10]; // large enough for GET_TELEMETRY (10 bytes)
+    uint8_t respPayload[11]; // large enough for GET_TELEMETRY (11 bytes)
     for (uint8_t i = 0; i < respLen; i++) {
         start = millis();
         while (!Serial1.available()) {
@@ -107,8 +107,8 @@ bool CommsMaster::transact(uint8_t cmd,
 // ── Public commands ───────────────────────────────────────────────────────
 bool CommsMaster::readAll(CoolerState& state) {
     state.valid = false;
-    uint8_t resp[10];
-    if (!transact(COMMS_CMD_GET, nullptr, 0, resp, 10)) return false;
+    uint8_t resp[11];
+    if (!transact(COMMS_CMD_GET, nullptr, 0, resp, 11)) return false;
 
     state.currentTemp10    = (int16_t)((uint16_t)resp[0] | ((uint16_t)resp[1] << 8));
     state.targetTemp10     = (int16_t)((uint16_t)resp[2] | ((uint16_t)resp[3] << 8));
@@ -116,6 +116,7 @@ bool CommsMaster::readAll(CoolerState& state) {
     state.fanCurrentMilliA = (uint16_t)resp[6] | ((uint16_t)resp[7] << 8);
     state.compPower        = resp[8];
     state.compPowerMax     = resp[9];
+    state.pmode            = resp[10];
     state.valid            = true;
     return true;
 }
@@ -139,5 +140,11 @@ bool CommsMaster::setCompPower(uint8_t power) {
 bool CommsMaster::setCompPowerMax(uint8_t powerMax) {
     uint8_t resp[1];
     if (!transact(COMMS_CMD_SET_PMAX, &powerMax, 1, resp, 1)) return false;
+    return resp[0] == COMMS_ACK;
+}
+
+bool CommsMaster::setPowerMode(uint8_t mode) {
+    uint8_t resp[1];
+    if (!transact(COMMS_CMD_SET_PMODE, &mode, 1, resp, 1)) return false;
     return resp[0] == COMMS_ACK;
 }

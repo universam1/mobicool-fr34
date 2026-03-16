@@ -28,14 +28,16 @@
 #define COMMS_CMD_SET_TEMP  0x02  // Payload: int16 LE (tenths °C) → ACK/NAK
 #define COMMS_CMD_SET_POWER 0x03  // Payload: uint8 0-100 % → ACK/NAK
 #define COMMS_CMD_SET_PMAX  0x04  // Payload: uint8 0-100 % → ACK/NAK
+#define COMMS_CMD_SET_PMODE 0x05  // Payload: uint8 (0=ECO 1=NORMAL 2=HI) → ACK/NAK
 
-// GET response payload layout (10 bytes, all little-endian)
+// GET response payload layout (11 bytes, all little-endian)
 //   [0-1] current temp  int16 tenths °C
 //   [2-3] setpoint      int16 tenths °C
 //   [4-5] voltage       uint16 mV
 //   [6-7] fan current   uint16 mA
 //   [8]   comp power    uint8  0-100 %
 //   [9]   comp pmax     uint8  0-100 %
+//  [10]   power mode    uint8  0=ECO 1=NORMAL 2=HI
 
 // Pin definitions — RA0 (ICSPDAT, PIC pin 19, J2 header) open-drain bidirectional
 #define COMMS_PIN           PORTAbits.RA0
@@ -50,5 +52,7 @@ void    Comms_SetTargetTemperature(int16_t temp);
 uint8_t Comms_GetCompressorPower(void);
 void    Comms_SetCompressorPower(uint8_t power);
 uint8_t Comms_GetMaxPowerLimit(void);
+uint8_t Comms_GetPowerMode(void);
+void    Comms_SetPowerMode(uint8_t mode);
 
 #endif // COMMS_H

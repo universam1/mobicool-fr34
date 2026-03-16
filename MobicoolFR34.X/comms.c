@@ -15,6 +15,7 @@
 static int16_t targetTemperature  = 50;   // Default 5.0 °C (tenths)
 static uint8_t compressorPower    = 0;    // Default 0 % (auto)
 static uint8_t compressorMaxPower = 100;  // Default 100 %
+static uint8_t powerMode          = 1;    // Default PMODE_NORMAL
 
 // ── Timer0 initialisation ─────────────────────────────────────────────────
 // Same configuration as the former comms code — TMR0 is shared for bit timing.
@@ -128,13 +129,14 @@ static void comms_handle(uint8_t cmd, const uint8_t *payload, uint8_t len) {
             int16_t  setp = targetTemperature;
             uint16_t volt = AnalogGetVoltage();
             uint16_t fanc = AnalogGetFanCurrent();
-            uint8_t resp[10] = {
+            uint8_t resp[11] = {
                 (uint8_t)(temp),         (uint8_t)((uint16_t)temp >> 8),
                 (uint8_t)(setp),         (uint8_t)((uint16_t)setp >> 8),
                 (uint8_t)(volt),         (uint8_t)(volt >> 8),
                 (uint8_t)(fanc),         (uint8_t)(fanc >> 8),
                 compressorPower,
-                compressorMaxPower
+                compressorMaxPower,
+                powerMode
             };
             comms_respond(resp, sizeof(resp));
             break;
@@ -160,6 +162,13 @@ static void comms_handle(uint8_t cmd, const uint8_t *payload, uint8_t len) {
             compressorMaxPower = payload[0];
             if (compressorPower > compressorMaxPower)
                 compressorPower = compressorMaxPower;
+            comms_respond_ack();
+            break;
+        }
+
+        case COMMS_CMD_SET_PMODE: {
+            if (len < 1 || payload[0] > 2) { comms_respond_nak(); break; }
+            powerMode = payload[0];
             comms_respond_ack();
             break;
         }
@@ -230,3 +239,5 @@ void    Comms_SetCompressorPower(uint8_t power) {
 }
 
 uint8_t Comms_GetMaxPowerLimit(void)              { return compressorMaxPower; }
+uint8_t Comms_GetPowerMode(void)                  { return powerMode; }
+void    Comms_SetPowerMode(uint8_t mode)          { if (mode <= 2) powerMode = mode; }

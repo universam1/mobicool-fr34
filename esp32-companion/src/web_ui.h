@@ -71,6 +71,10 @@ body{margin:0}
   .dot-err  { background:#ef4444; box-shadow:0 0 6px #ef4444; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  .mode-btn { border-radius:.5rem; padding:.5rem; font-size:.875rem; font-weight:600; transition:background-color 150ms,color 150ms; cursor:pointer; border:none; width:100%; }
+  .mode-active { background-color:#38bdf8; color:#0f172a; }
+  .mode-inactive { background-color:#334155; color:#f1f5f9; }
+  .mode-inactive:hover { background-color:#475569; }
 </style>
 </head>
 <body class="dark text-slate-100 min-h-screen p-4 font-sans">
@@ -182,6 +186,23 @@ body{margin:0}
       </p>
     </div>
 
+    <!-- Power Mode -->
+    <div class="card rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-semibold">Power Mode</span>
+        <span class="text-sm text-slate-400">{{ modeLabel }}</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button v-for="(label, idx) in ['Eco', 'Std', 'Hi']" :key="idx"
+          @click="setMode(idx)"
+          :class="state.pmode === idx ? 'mode-active' : 'mode-inactive'"
+          class="mode-btn">{{ label }}</button>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">
+        Eco: quiet, wider hysteresis &nbsp;&middot;&nbsp; Std: balanced &nbsp;&middot;&nbsp; Hi: full speed, deep hold
+      </p>
+    </div>
+
     <!-- Last update -->
     <div class="text-center text-xs text-slate-600 pb-4">
       Last update: {{ lastUpdate || '—' }} &nbsp;·&nbsp;
@@ -199,7 +220,8 @@ createApp({
     const state = ref({
       temp: null, setpoint: null,
       voltage: null, fanCurrent: null,
-      compPower: null, compPowerMax: null
+      compPower: null, compPowerMax: null,
+      pmode: null
     });
 
     const connected   = ref(false);
@@ -235,6 +257,7 @@ createApp({
           state.value.fanCurrent = d.fanCurrent?? null;
           state.value.compPower  = d.compPower ?? null;
           state.value.compPowerMax = d.compPowerMax ?? null;
+          state.value.pmode      = d.pmode ?? null;
 
           // Sync sliders only when the server sends fresh values
           // (avoid overwriting while the user is dragging)
@@ -279,6 +302,10 @@ createApp({
       send({ cmd: 'setPowerMax', value: pendingPowerMax.value });
     }
 
+    function setMode(m) {
+      send({ cmd: 'setPMode', value: m });
+    }
+
     // ── Computed visuals ──────────────────────────────────────────────────
     const tempColor = computed(() => {
       const t = state.value.temp;
@@ -305,12 +332,17 @@ createApp({
       return pendingPower.value === 0 ? 'AUTO' : pendingPower.value + '%';
     });
 
+    const modeLabel = computed(() => {
+      const names = ['Eco', 'Std', 'Hi'];
+      return state.value.pmode !== null ? (names[state.value.pmode] ?? '\u2014') : '\u2014';
+    });
+
     return {
       state, connected, lastUpdate,
       pendingPower, pendingPowerMax,
-      tempColor, statusDotClass, statusLabel, powerOverrideLabel,
+      tempColor, statusDotClass, statusLabel, powerOverrideLabel, modeLabel,
       fmt1, fmt2,
-      adjustSetpoint, setPower, setPowerMax
+      adjustSetpoint, setPower, setPowerMax, setMode
     };
   }
 }).mount('#app');

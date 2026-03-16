@@ -125,6 +125,7 @@ static void system_init(display_context_t* display) {
     
     // Sync initial state to comms
     Comms_SetTargetTemperature(display->temp_setpoint10);
+    Comms_SetPowerMode((uint8_t)display->pmode);
     
     // Initial readings
     AnalogUpdate();
@@ -406,8 +407,14 @@ static void update_settings(display_context_t* display, int16_t* temp_setpoint10
         Settings_SaveBattMon(display->battmon);
     }
     
+    // Remote pmode change from ESP32
+    uint8_t comms_pmode = Comms_GetPowerMode();
+    if (comms_pmode <= 2 && (pmode_t)comms_pmode != display->pmode) {
+        display->newpmode = (pmode_t)comms_pmode;
+    }
     if (display->newpmode != display->pmode) {
         display->pmode = display->newpmode;
+        Comms_SetPowerMode((uint8_t)display->pmode);
     }
 }
 

@@ -74,6 +74,7 @@ static String buildJson(const CoolerState& s) {
         doc["fanCurrent"]   = s.fanCurrentMilliA  / 1000.0f;
         doc["compPower"]    = s.compPower;
         doc["compPowerMax"] = s.compPowerMax;
+        doc["pmode"]        = s.pmode;
     } else {
         doc["error"] = "comms_fail";
     }
@@ -100,6 +101,7 @@ static void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient*,
     if      (strcmp(cmd, "setTemp")     == 0) comms.setTargetTemp((int16_t)val);
     else if (strcmp(cmd, "setPower")    == 0) comms.setCompPower((uint8_t)constrain(val, 0, 100));
     else if (strcmp(cmd, "setPowerMax") == 0) comms.setCompPowerMax((uint8_t)constrain(val, 0, 100));
+    else if (strcmp(cmd, "setPMode")    == 0) comms.setPowerMode((uint8_t)constrain(val, 0, 2));
 
     if (comms.readAll(coolerState)) ws.textAll(buildJson(coolerState));
 }
@@ -144,33 +146,37 @@ static inline void wifiNotify(const CoolerState& s) {
 
 // Custom 128-bit UUIDs for the FR34 cooler GATT service
 #define BLE_SVC_UUID       "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-// Status characteristic (READ + NOTIFY): 10-byte little-endian payload
+// Status characteristic (READ + NOTIFY): 11-byte little-endian payload
 //   [0-1] int16  currentTemp10    (tenths of °C)
 //   [2-3] int16  targetTemp10     (tenths of °C)
 //   [4-5] uint16 voltageMilliV    (mV)
 //   [6-7] uint16 fanCurrentMilliA (mA)
 //   [8]   uint8  compPower        (0-100 %)
 //   [9]   uint8  compPowerMax     (0-100 %)
+//  [10]   uint8  pmode            (0=Eco 1=Normal 2=Hi)
 #define BLE_STAT_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 // Command characteristics (WRITE / WRITE_NR): raw little-endian value
 #define BLE_CMD_TEMP_UUID  "beb5483f-36e1-4688-b7f5-ea07361b26a8"  // int16 (tenths °C)
 #define BLE_CMD_PWR_UUID   "beb54840-36e1-4688-b7f5-ea07361b26a8"  // uint8 (0-100)
 #define BLE_CMD_PMAX_UUID  "beb54841-36e1-4688-b7f5-ea07361b26a8"  // uint8 (0-100)
+#define BLE_CMD_PMODE_UUID "beb54842-36e1-4688-b7f5-ea07361b26a8"  // uint8 (0-2)
 
-static NimBLECharacteristic* bleStatusChar   = nullptr;
-static NimBLECharacteristic* bleCmdTempChar  = nullptr;
-static NimBLECharacteristic* bleCmdPwrChar   = nullptr;
-static NimBLECharacteristic* bleCmdPMaxChar  = nullptr;
+static NimBLECharacteristic* bleStatusChar    = nullptr;
+static NimBLECharacteristic* bleCmdTempChar   = nullptr;
+static NimBLECharacteristic* bleCmdPwrChar    = nullptr;
+static NimBLECharacteristic* bleCmdPMaxChar   = nullptr;
+static NimBLECharacteristic* bleCmdPModeChar  = nullptr;
 
 static void blePackAndNotify(const CoolerState& s) {
     if (!s.valid || !bleStatusChar) return;
-    uint8_t buf[10];
+    uint8_t buf[11];
     memcpy(buf + 0, &s.currentTemp10,    2);
     memcpy(buf + 2, &s.targetTemp10,     2);
     memcpy(buf + 4, &s.voltageMilliV,    2);
     memcpy(buf + 6, &s.fanCurrentMilliA, 2);
-    buf[8] = s.compPower;
-    buf[9] = s.compPowerMax;
+    buf[8]  = s.compPower;
+    buf[9]  = s.compPowerMax;
+    buf[10] = s.pmode;
     bleStatusChar->setValue(buf, sizeof(buf));
     bleStatusChar->notify();
 }
@@ -185,6 +191,8 @@ class BleCmdCallback : public NimBLECharacteristicCallbacks {
             comms.setCompPower((uint8_t)constrain((int)val[0], 0, 100));
         } else if (pChar == bleCmdPMaxChar && val.size() >= 1) {
             comms.setCompPowerMax((uint8_t)constrain((int)val[0], 0, 100));
+        } else if (pChar == bleCmdPModeChar && val.size() >= 1) {
+            comms.setPowerMode((uint8_t)constrain((int)val[0], 0, 2));
         }
         if (comms.readAll(coolerState)) blePackAndNotify(coolerState);
     }
@@ -224,6 +232,10 @@ static void bleSetup() {
     bleCmdPMaxChar = pSvc->createCharacteristic(BLE_CMD_PMAX_UUID,
         NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
     bleCmdPMaxChar->setCallbacks(&bleCmdCb);
+
+    bleCmdPModeChar = pSvc->createCharacteristic(BLE_CMD_PMODE_UUID,
+        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+    bleCmdPModeChar->setCallbacks(&bleCmdCb);
 
     pSvc->start();
 

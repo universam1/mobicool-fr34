@@ -10,14 +10,16 @@
 #define COMMS_CMD_SET_TEMP  0x02
 #define COMMS_CMD_SET_POWER 0x03
 #define COMMS_CMD_SET_PMAX  0x04
+#define COMMS_CMD_SET_PMODE 0x05
 
-// GET response layout (10 payload bytes, little-endian signed/unsigned)
+// GET response layout (11 payload bytes, little-endian signed/unsigned)
 //   [0-1] current temp  int16  tenths °C
 //   [2-3] setpoint      int16  tenths °C
 //   [4-5] voltage       uint16 mV
 //   [6-7] fan current   uint16 mA
 //   [8]   comp power    uint8  0-100 %
 //   [9]   comp pmax     uint8  0-100 %
+//  [10]   pmode         uint8  0=Eco 1=Normal 2=Hi
 
 // ── State snapshot ────────────────────────────────────────────────────────
 struct CoolerState {
@@ -27,6 +29,7 @@ struct CoolerState {
     uint16_t fanCurrentMilliA; // mA
     uint8_t  compPower;        // 0-100 % (0 = auto)
     uint8_t  compPowerMax;     // 0-100 % hard cap
+    uint8_t  pmode;            // 0=Eco 1=Normal 2=Hi
     bool     valid;            // true if last poll succeeded
 };
 
@@ -48,6 +51,7 @@ public:
     bool setTargetTemp(int16_t temp10);      // tenths of °C
     bool setCompPower(uint8_t power);        // 0-100 %
     bool setCompPowerMax(uint8_t powerMax);  // 0-100 %
+    bool setPowerMode(uint8_t mode);         // 0=Eco 1=Normal 2=Hi
 
 private:
     int      _pin    = -1;
