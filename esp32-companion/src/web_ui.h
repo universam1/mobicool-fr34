@@ -203,6 +203,57 @@ body{margin:0}
       </p>
     </div>
 
+    <!-- Flash Firmware -->
+    <div class="card rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-semibold">Flash PIC Firmware</span>
+        <span class="text-xs text-slate-400">Intel HEX (.hex)</span>
+      </div>
+      <p class="text-xs text-slate-500 mb-3">
+        Upload a compiled <code>.hex</code> file to reprogram the PIC16F1829 over ICSP.
+        The cooler will be paused during flashing (~5 s). Requires the 3-wire ICSP
+        connection (GPIO 4/5/6 → J2 DAT/MCLR/CLK).
+      </p>
+
+      <!-- File picker row -->
+      <div class="flex gap-2 items-center mb-3">
+        <label class="flex-1">
+          <input type="file" accept=".hex,text/plain" @change="onHexFile"
+                 class="hidden" ref="hexInput"/>
+          <span class="block w-full rounded-lg bg-slate-700 hover:bg-slate-600
+                       text-center text-sm font-semibold py-2 cursor-pointer
+                       transition-colors truncate">
+            {{ hexFileName || 'Choose .hex file…' }}
+          </span>
+        </label>
+        <button @click="flashPic"
+          :disabled="!hexFileData || flashState === 'writing' || flashState === 'erasing' || flashState === 'verifying'"
+          class="rounded-lg px-4 py-2 text-sm font-bold transition-colors"
+          :class="flashBtnClass">
+          {{ flashBtnLabel }}
+        </button>
+      </div>
+
+      <!-- Progress bar (shown while flashing or after) -->
+      <div v-if="flashPct > 0 || flashState !== 'idle'" class="mt-2">
+        <div class="flex justify-between text-xs mb-1"
+             :class="flashState === 'error' ? 'text-red-400' :
+                     flashState === 'done'  ? 'text-emerald-400' : 'text-slate-400'">
+          <span>{{ flashStatusLabel }}</span>
+          <span>{{ flashPct }}%</span>
+        </div>
+        <div class="w-full bg-slate-700 rounded-full h-2">
+          <div class="h-2 rounded-full transition-all duration-300"
+               :style="{ width: flashPct + '%' }"
+               :class="flashState === 'error'   ? 'bg-red-500'     :
+                       flashState === 'done'    ? 'bg-emerald-500' :
+                       flashState === 'verifying' ? 'bg-yellow-400' : 'bg-sky-400'">
+          </div>
+        </div>
+        <p v-if="flashError" class="text-xs text-red-400 mt-2 break-all">{{ flashError }}</p>
+      </div>
+    </div>
+
     <!-- Last update -->
     <div class="text-center text-xs text-slate-600 pb-4">
       Last update: {{ lastUpdate || '—' }} &nbsp;·&nbsp;
@@ -231,6 +282,14 @@ createApp({
     const pendingPower    = ref(0);
     const pendingPowerMax = ref(100);
 
+    // ── Flash state ────────────────────────────────────────────────────────
+    const hexFileName = ref('');
+    const hexFileData = ref(null);   // ArrayBuffer
+    const hexInput    = ref(null);
+    const flashState  = ref('idle'); // idle | erasing | parsing | writing | verifying | done | error
+    const flashPct    = ref(0);
+    const flashError  = ref('');
+
     // ── WebSocket ─────────────────────────────────────────────────────────
     let ws = null;
     let reconnectTimer = null;
@@ -250,6 +309,15 @@ createApp({
       ws.onmessage = (ev) => {
         try {
           const d = JSON.parse(ev.data);
+
+          // Flash progress message from ESP32
+          if (d.flash) {
+            flashState.value = d.flash.state;
+            flashPct.value   = d.flash.pct ?? flashPct.value;
+            flashError.value = d.flash.error ?? '';
+            return;
+          }
+
           // temperatures come as tenths of °C from ESP32
           state.value.temp       = d.temp      ?? null;
           state.value.setpoint   = d.setpoint  ?? null;
@@ -337,12 +405,77 @@ createApp({
       return state.value.pmode !== null ? (names[state.value.pmode] ?? '\u2014') : '\u2014';
     });
 
+    // ── Flash computed ─────────────────────────────────────────────────────
+    const busy = computed(() =>
+      ['erasing', 'parsing', 'writing', 'verifying'].includes(flashState.value));
+
+    const flashBtnLabel = computed(() => {
+      if (flashState.value === 'erasing')   return 'Erasing…';
+      if (flashState.value === 'writing')   return 'Writing…';
+      if (flashState.value === 'verifying') return 'Verifying…';
+      if (flashState.value === 'done')      return 'Flash again';
+      return 'Flash';
+    });
+
+    const flashBtnClass = computed(() => {
+      if (busy.value || !hexFileData.value)
+        return 'bg-slate-600 text-slate-400 cursor-not-allowed';
+      return 'bg-sky-500 hover:bg-sky-400 active:bg-sky-300 text-slate-900 cursor-pointer';
+    });
+
+    const flashStatusLabel = computed(() => {
+      const map = {
+        erasing: 'Erasing flash…', parsing: 'Parsing HEX…',
+        writing: 'Writing…', verifying: 'Verifying…',
+        done: 'Done!', error: 'Error'
+      };
+      return map[flashState.value] ?? '';
+    });
+
+    // ── Flash functions ────────────────────────────────────────────────────
+    function onHexFile(ev) {
+      const file = ev.target.files[0];
+      if (!file) return;
+      hexFileName.value = file.name;
+      const reader = new FileReader();
+      reader.onload = e => { hexFileData.value = e.target.result; };
+      reader.readAsText(file);
+    }
+
+    async function flashPic() {
+      if (!hexFileData.value || busy.value) return;
+      flashState.value = 'erasing';
+      flashPct.value   = 0;
+      flashError.value = '';
+      try {
+        const resp = await fetch('/api/flash', {
+          method:  'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body:    hexFileData.value,
+        });
+        const json = await resp.json();
+        if (!json.ok) {
+          flashError.value = json.error ?? 'Unknown error';
+          flashState.value = 'error';
+        }
+        // flashState/pct will also be updated by WS messages from the ESP32
+      } catch (err) {
+        flashError.value = String(err);
+        flashState.value = 'error';
+      }
+    }
+
     return {
       state, connected, lastUpdate,
       pendingPower, pendingPowerMax,
       tempColor, statusDotClass, statusLabel, powerOverrideLabel, modeLabel,
       fmt1, fmt2,
-      adjustSetpoint, setPower, setPowerMax, setMode
+      adjustSetpoint, setPower, setPowerMax, setMode,
+      // flash
+      hexFileName, hexFileData, hexInput,
+      flashState, flashPct, flashError,
+      flashBtnLabel, flashBtnClass, flashStatusLabel,
+      onHexFile, flashPic
     };
   }
 }).mount('#app');

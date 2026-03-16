@@ -18,6 +18,14 @@ Both transports expose the same data and controls:
 - Compressor override duty cycle 0–100 % (read + write, 0 = auto)
 - Compressor power cap 0–100 % (read + write)
 
+## Over-The-Air (OTA) PIC Firmware Flashing
+
+When connected via WiFi, the companion can re-flash the cooler's internal PIC16F1829 microcontroller directly from your browser. 
+- You do **not** need to open the cooler chassis after the initial install.
+- The web UI accepts standard `.hex` files built via Docker.
+- A live progress bar displays parsing, erasing, writing, and verification states.
+- *Note: Requires soldering 3 additional wires for the ICSP interface (see WIRING.md) and requires the PIC's `LVP` fuse to be enabled first via an external programmer.*
+
 ---
 
 ## Hardware

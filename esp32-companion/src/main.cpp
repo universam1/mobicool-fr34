@@ -23,6 +23,7 @@
 
 #include <Arduino.h>
 #include "comms_master.h"
+#include "pic_programmer.h"
 
 #if !defined(TRANSPORT_WIFI) && !defined(TRANSPORT_BLE)
 #  error "Define either TRANSPORT_WIFI or TRANSPORT_BLE via build flags"
@@ -45,14 +46,18 @@
 
 // ── Common configuration ───────────────────────────────────────────────────
 static constexpr char     DEVICE_NAME[] = "FR34-Cooler";
-static constexpr int      COMMS_DATA_PIN = 4;    // open-drain single wire → PIC RA0/ICSPDAT (GPIO 4)
-static constexpr uint32_t COMMS_BAUD     = 9600;
-static constexpr uint32_t POLL_MS       = 1000;
+static constexpr int      COMMS_DATA_PIN  = 4;    // open-drain single wire → PIC RA0/ICSPDAT (GPIO 4)
+static constexpr int      ICSP_CLK_PIN    = 6;    // new wire → J2 pin 5 (ICSPCLK/RA1)
+static constexpr int      ICSP_MCLR_PIN   = 5;    // new wire → J2 pin 1 (MCLR/VPP), open-drain
+static constexpr uint32_t COMMS_BAUD      = 9600;
+static constexpr uint32_t POLL_MS         = 1000;
 
 // ── Common globals ─────────────────────────────────────────────────────────
-CommsMaster comms;
+CommsMaster  comms;
 CoolerState  coolerState;
-static uint32_t lastPoll = 0;
+PicProgrammer picProg;
+static uint32_t lastPoll     = 0;
+static bool     flashBusy    = false;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // WiFi transport
@@ -103,7 +108,7 @@ static void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient*,
     else if (strcmp(cmd, "setPowerMax") == 0) comms.setCompPowerMax((uint8_t)constrain(val, 0, 100));
     else if (strcmp(cmd, "setPMode")    == 0) comms.setPowerMode((uint8_t)constrain(val, 0, 2));
 
-    if (comms.readAll(coolerState)) ws.textAll(buildJson(coolerState));
+    if (!flashBusy && comms.readAll(coolerState)) ws.textAll(buildJson(coolerState));
 }
 
 static void wifiSetup() {
@@ -124,6 +129,106 @@ static void wifiSetup() {
     server.on("/api/state", HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send(200, "application/json", buildJson(coolerState));
     });
+
+    // Flash endpoint: POST /api/flash with raw Intel HEX body (text/plain or
+    // application/octet-stream). Maximum accepted body: 48 KB (covers the full
+    // 8 K-word PIC16F1829 flash in ASCII HEX form with margin to spare).
+    static constexpr size_t MAX_HEX_SIZE = 48 * 1024;
+
+    // Body-collection handler
+    server.on("/api/flash", HTTP_POST,
+        // onRequest  — called after full body is assembled
+        [](AsyncWebServerRequest* req) {
+            // Body is accessed via req->_tempObject set in onBody handler
+            if (flashBusy) {
+                req->send(503, "application/json", "{\"error\":\"busy\"}");
+                return;
+            }
+            char* hexBuf = (char*)req->getParam("_hexbuf", "_hexbuf");
+            // hexBuf is set via _tempObject trick below
+            if (!req->_tempObject) {
+                req->send(400, "application/json", "{\"error\":\"no body\"}");
+                return;
+            }
+            struct FlashJob { char* buf; size_t len; AsyncWebServerRequest* req; };
+            auto* job = (FlashJob*)req->_tempObject;
+
+            flashBusy = true;
+            // Broadcast flash-start event to all WebSocket clients
+            ws.textAll("{\"flash\":{\"state\":\"erasing\",\"pct\":0}}");
+
+            // Progress callback — broadcast to WebSocket
+            auto progressCb = [](uint8_t pct, void* ctx) {
+                auto* wss = (AsyncWebSocket*)ctx;
+                char msg[64];
+                const char* state = pct < 10  ? "parsing"  :
+                                    pct < 80  ? "writing"  :
+                                    pct < 98  ? "verifying" : "done";
+                snprintf(msg, sizeof(msg),
+                    "{\"flash\":{\"state\":\"%s\",\"pct\":%u}}", state, pct);
+                wss->textAll(msg);
+            };
+
+            ProgramResult result = picProg.flash(job->buf, job->len,
+                                                  progressCb, &ws);
+            flashBusy = false;
+
+            // Re-initialise comms after programmer released the bus
+            comms.begin(COMMS_DATA_PIN, COMMS_BAUD);
+
+            // Free HEX buffer
+            free(job->buf);
+            free(job);
+            req->_tempObject = nullptr;
+
+            if (result.ok) {
+                char resp[128];
+                snprintf(resp, sizeof(resp),
+                    "{\"ok\":true,\"wordsWritten\":%u,\"wordsVerified\":%u}",
+                    result.wordsWritten, result.wordsVerified);
+                req->send(200, "application/json", resp);
+                ws.textAll("{\"flash\":{\"state\":\"done\",\"pct\":100}}");
+            } else {
+                char resp[192];
+                snprintf(resp, sizeof(resp),
+                    "{\"ok\":false,\"error\":\"%s\"}", result.errorMsg);
+                req->send(500, "application/json", resp);
+                char msg[192];
+                snprintf(msg, sizeof(msg),
+                    "{\"flash\":{\"state\":\"error\",\"pct\":0,\"error\":\"%s\"}}",
+                    result.errorMsg);
+                ws.textAll(msg);
+            }
+        },
+        // onUpload — not used (we use body)
+        nullptr,
+        // onBody — accumulate entire body into a heap buffer
+        [](AsyncWebServerRequest* req, uint8_t* data, size_t len,
+           size_t index, size_t total) {
+            if (total > MAX_HEX_SIZE) {
+                // Silently ignore — onRequest will get nullptr
+                return;
+            }
+            if (index == 0) {
+                // First chunk: allocate buffer + FlashJob
+                struct FlashJob { char* buf; size_t len; AsyncWebServerRequest* req; };
+                auto* job = (FlashJob*)malloc(sizeof(FlashJob));
+                job->buf = (char*)malloc(total + 1);
+                job->len = total;
+                job->req = req;
+                req->_tempObject = job;
+            }
+            if (req->_tempObject) {
+                struct FlashJob { char* buf; size_t len; AsyncWebServerRequest* req; };
+                auto* job = (FlashJob*)req->_tempObject;
+                memcpy(job->buf + index, data, len);
+                if (index + len == total) {
+                    job->buf[total] = '\0';  // null-terminate for string parsing
+                }
+            }
+        }
+    );
+
     server.onNotFound([](AsyncWebServerRequest* req) {
         req->send(404, "text/plain", "Not found");
     });
@@ -263,6 +368,9 @@ void setup() {
     comms.begin(COMMS_DATA_PIN, COMMS_BAUD);
     Serial.println("[FR34] Comms initialised (GPIO4 open-drain, 9600 baud)");
 
+    picProg.configure(COMMS_DATA_PIN, ICSP_CLK_PIN, ICSP_MCLR_PIN);
+    Serial.println("[FR34] ICSP programmer configured (DAT=GPIO4, CLK=GPIO6, MCLR=GPIO5)");
+
 #ifdef TRANSPORT_WIFI
     wifiSetup();
 #endif
@@ -277,7 +385,7 @@ void loop() {
 #endif
 
     uint32_t now = millis();
-    if (now - lastPoll >= POLL_MS) {
+    if (!flashBusy && now - lastPoll >= POLL_MS) {
         lastPoll = now;
         if (comms.readAll(coolerState)) {
 #ifdef TRANSPORT_WIFI

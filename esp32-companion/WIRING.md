@@ -65,6 +65,50 @@ to power the ESP32-C3.  Do not draw power from the cooler mainboard.
 
 ---
 
+## ICSP Flash Programming (optional, 3 extra wires)
+
+The ESP32-C3 can reprogram the PIC16F1829 in-circuit via the J2 ICSP header
+using **Low-Voltage Programming (LVP)**.
+*Note: The factory stock firmware likely has LVP disabled. An initial flash via an external 9V programmer might be required to set CONFIG2 `LVP=ON` before this ESP32 LVP flasher works.*
+
+Connect two additional wires:
+
+| J2 pin | PIC signal     | PIC pin | ESP32-C3 GPIO | Note |
+|:------:|----------------|:-------:|:-------------:|------|
+|   4    | ICSPDAT / RA0  |   19    | **4**         | existing data wire |
+|   5    | ICSPCLK / RA1  |   18    | **6**         | new wire |
+|   1    | MCLR / VPP     |    4    | **5**         | new, must be open-drain |
+|   3    | VSS (GND)      |   20    | GND           | existing |
+|   2    | VDD            |    1    | **DO NOT CONNECT** | PIC powered by cooler |
+
+### Safety notes
+
+- MCLR (GPIO 5) is driven **open-drain**: high-Z during normal operation
+  (PIC's internal MCLR pull-up keeps it running), LOW only during programming.
+- ICSPCLK (RA1) doubles as the **internal cooler light**.  Because the ESP32
+  drives this pin with the clock signal during programming, the light will
+  likely flicker rapidly. This is normal and safe.
+- **Disconnect J2 completely** before attaching an external ICSP programmer
+  (PICkit etc.) to avoid bus conflicts with GPIO 4/5/6.
+- The `/api/flash` endpoint (HTTP POST, WiFi transport only) accepts a raw
+  Intel HEX file and programs the PIC.  The Web UI provides a file picker and
+  live progress bar.  Flash time is approximately 5 seconds for a full image.
+
+### Wiring diagram (ICSP mode)
+
+```
+ Cooler PCB J2 (1=square)     ESP32-C3-DevKitM-1
+ ┌────────────────────┐       ┌──────────────────┐
+ │ pin 1  MCLR    ────┼───────┼─ GPIO 5           │
+ │ pin 2  VDD     ────┼  X    │  (not connected)  │
+ │ pin 3  GND     ────┼───────┼─ GND              │
+ │ pin 4  ICSPDAT ────┼───────┼─ GPIO 4           │
+ │ pin 5  ICSPCLK ────┼───────┼─ GPIO 6           │
+ └────────────────────┘       └──────────────────┘
+```
+
+---
+
 ## Wiring diagram (ASCII)
 
 ```

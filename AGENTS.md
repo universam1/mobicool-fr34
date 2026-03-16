@@ -9,9 +9,15 @@ A two-part solution to upgrade and remotely manage a Mobicool FR34/FR40 compress
 
 ## 2. Hardware Interface & Wiring
 - **Voltages**: Both the PIC logic and ESP32-C3 operate at **3.3 V**. No level-shifters are required.
-- **Connection**: Only 2 wires are used (Data + GND) using a single-wire half-duplex topology.
-  - **Data Pin**: Connect to **PIC pin 19 (RA0/ICSPDAT)** via the **J2 ICSP header** — no soldering to a PIC pin required. Do **NOT** use the J4 header (J4 is the PIC ↔ IRMCF183 proprietary motor-controller link). Disconnect the ESP32 before ICSP programming.
+- **Connection**: Only 2 wires are used for normal telemetry/control (Data + GND) using a single-wire half-duplex topology.
+  - **Data Pin**: Connect to **PIC pin 19 (RA0/ICSPDAT)** via the **J2 ICSP header** — no soldering to a PIC pin required. Do **NOT** use the J4 header (J4 is the PIC ↔ IRMCF183 proprietary motor-controller link). Disconnect the ESP32 before using an external ICSP programmer.
   - **ESP32-C3 Pin**: **GPIO 4**. (GPIO 11–17 are reserved for the ESP32-C3-MINI-1 internal SPI flash and are not accessible on the DevKitM-1 headers.)
+- **ICSP Flash Programming** (optional 3-wire extension): The ESP32 can reprogram the PIC in-circuit via LVP (CONFIG2: `LVP = ON`). Two extra wires:
+  - **GPIO 6** → J2 pin 5 (ICSPCLK / RA1 / PIC pin 18)
+  - **GPIO 5** → J2 pin 1 (MCLR / VPP / PIC pin 4), open-drain
+  - Note: LVP programming requires the PIC to already have the LVP fuse enabled. The stock factory firmware likely has it disabled, so an initial flash via an external 9V programmer is required before relying on this ESP32 LVP bridge.
+  - MCLR is open-drain; during normal operation it is high-Z so the PIC runs. LOW → PIC enters LVP programming mode. RA1 controls the internal light, which might flicker safely during flashing.
+  - The `/api/flash` HTTP endpoint (WiFi transport) accepts a raw Intel HEX POST body and programs the PIC. Progress is broadcast over WebSocket. The Web UI includes a file picker and progress bar card.
 - **Power**: The ESP32-C3 must be powered by its own separate 5V/3.3V supply. The cooler's internal LDO cannot reliably handle the ESP32's current spikes.
 - **Electrical Topology**: Open-drain on both sides. The ESP32-C3 uses an internal `INPUT_PULLUP` (~45 kΩ), which is electrically sufficient for wires < 30 cm at 9600 baud. No external pull-up is needed unless the wire is long or the environment is excessively noisy.
 
